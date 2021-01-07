@@ -16,8 +16,9 @@ at the end, click on a high toolbar of the window and press 's'  on the keyboard
 
 import cv2
 import random
-path = '..\\Datasets\\faktury\\orange'
-path = path + '\\1.jpg'
+path = '..\\Datasets\\faktury\\pdf\\orange'
+path = path + '\\model_image.jpg'
+# path = '..\\Datasets\\faktury\\compressed_photo\\straight\\orange\\1.jpg'
 scale = 0.5
 circles = []
 counter = 0

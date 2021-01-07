@@ -16,7 +16,7 @@ at the end, click on a high toolbar of the window and press 's'  on the keyboard
 
 import cv2
 import random
-path = '..\\..\\Datasets\\faktury\\orange'
+path = '..\\..\\Datasets\\faktury\\pdf\\orange'
 path = path + '\\1.jpg'
 scale = 0.5
 circles = []

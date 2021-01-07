@@ -56,7 +56,7 @@ for j,y in enumerate(myPicList):
         cv2.rectangle(imgMask, (r[0][0],r[0][1]),(r[1][0],r[1][1]),(0,255,0),cv2.FILLED)
         imgShow = cv2.addWeighted(imgShow,0.99,imgMask,0.1,0)
 
-    # imgShow = cv2.resize(imgShow, (w // 3, h // 3))
+    imgShow = cv2.resize(imgShow, (w // 3, h // 3))
     cv2.imshow(y+"2", imgShow)
 
 cv2.imshow("Output",imgQ)
