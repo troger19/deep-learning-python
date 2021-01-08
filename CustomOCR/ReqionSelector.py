@@ -31,7 +31,7 @@ def mousePoints(event,x,y,flags,params):
     global counter,point1,point2,counter2,circles,myColor
     if event == cv2.EVENT_LBUTTONDOWN:
         if counter==0:
-            point1=int(x//scale),int(y//scale);
+            point1=int(x//scale),int(y//scale)
             counter +=1
             myColor = (random.randint(0,2)*200,random.randint(0,2)*200,random.randint(0,2)*200 )
         elif counter ==1:

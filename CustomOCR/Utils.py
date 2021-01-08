@@ -57,8 +57,9 @@ def extract_fields(page,rois):
         dst = cv2.resize(image, (int(width / 2), int(height / 2)))
         # cv2 use BGR images, therefore needs to  be converted to RGB otherwise it will be blue
         RGB_img = cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
+        RGB_extracted_image = cv2.cvtColor(img_extracted_field, cv2.COLOR_BGR2RGB)
         cv2.imshow('Output', RGB_img)
-        cv2.imshow('Croped', img_extracted_field)
+        cv2.imshow('Croped', RGB_extracted_image)
         cv2.waitKey(0)
     return fields
 

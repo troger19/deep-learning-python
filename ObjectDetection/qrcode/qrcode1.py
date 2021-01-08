@@ -3,8 +3,7 @@ import numpy as np
 from pyzbar.pyzbar import decode
 from pdf2image import convert_from_path
 
-# pdf = convert_from_path('o2\\3.pdf')
-pdf = convert_from_path('orange\\1.pdf')
+pdf = convert_from_path('zlavomat\\2.pdf')
 # pdf = convert_from_path('zlavomat\\zlavomat1.pdf')
 
 page1 = decode(pdf[0])
