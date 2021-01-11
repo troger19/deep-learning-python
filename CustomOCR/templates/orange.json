@@ -59,5 +59,13 @@
       "type": "text",
       "name": "date"
     }
+  ],
+  "phrase": [
+    {
+      "text": "Spolu zaokrúhlene bez DPH"
+    },
+    {
+      "text": "Mimo režim DPH1"
+    }
   ]
 }

@@ -33,7 +33,7 @@ def find_template(data):
         return chosen_template
 
 
-def extract_fields(page,rois):
+def extract_fields(page, rois):
     # key:value pair of fields and their OCR values
     fields = {}
     for i, roi in enumerate(rois):
@@ -49,10 +49,10 @@ def extract_fields(page,rois):
         threshold_img = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
 
         # extract fields
-        extracted_field = pytesseract.image_to_string(threshold_img,  config='--psm 7 --oem 3',lang='SLK').strip()
+        extracted_field = pytesseract.image_to_string(threshold_img, config='--psm 7 --oem 3', lang='SLK').strip()
         print(extracted_field)
         # add as key:value pair
-        fields.update({roi['name'] :  extracted_field})
+        fields.update({roi['name']: extracted_field})
         # fit to the window
         dst = cv2.resize(image, (int(width / 2), int(height / 2)))
         # cv2 use BGR images, therefore needs to  be converted to RGB otherwise it will be blue
@@ -64,3 +64,33 @@ def extract_fields(page,rois):
     return fields
 
 
+def extract_dynamic_fields(page, phrases):
+    dynamic_fields = {}
+    for i, phrase in enumerate(phrases):
+        image = np.array(page)
+        # converting image into gray scale image
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        threshold_img = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+
+        # extract fields
+        extracted_dynamic_fields = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='dict')
+        # print(extracted_dynamic_fields)
+        # add as key:value pair
+        check_all_words(phrase, extracted_dynamic_fields)
+    return dynamic_fields
+
+
+def check_all_words(phrase, extracted_dynamic_fields):
+    all_words_in_phrase = phrase['text'].split()
+    i = 0
+    index = extracted_dynamic_fields['text'].index(all_words_in_phrase[0])
+    print(all_words_in_phrase[0])
+    # TODO catch podmineka, ak sa nenajde v indexe hladane slovo
+    while i < len(all_words_in_phrase) - 1:
+        index += 1
+        i += 1
+        index_new = extracted_dynamic_fields['text'][index]
+        print(index_new)
+        if all_words_in_phrase[i] != index_new:
+            print('Slova nesedia, preskakujem na dalsie')
+            break

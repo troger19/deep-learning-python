@@ -1,0 +1,1 @@
+Iba na jednoznacne tabulky ako je v prikladoch, na Orange, O2 tabulky bez ciar nefungovalo

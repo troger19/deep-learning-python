@@ -1,0 +1,1 @@
+Extrakcia z PDF pomocou pdfminer
