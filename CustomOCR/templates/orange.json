@@ -62,10 +62,19 @@
   ],
   "phrase": [
     {
-      "text": "Spolu zaokrúhlene bez DPH"
+      "name": "spolu_bez_dph",
+      "text": "Spolu zaokrúhlene bez DPH",
+      "type": "decimal"
     },
     {
-      "text": "Mimo režim DPH1"
+      "name": "mimo_dph",
+      "text": "Mimo režim DPH",
+      "type": "decimal"
+    },
+    {
+      "name": "spolu_s_dph",
+      "text": "Spolu s DPH",
+      "type": "decimal"
     }
   ]
 }

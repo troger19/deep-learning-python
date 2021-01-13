@@ -59,5 +59,12 @@
       "type": "text",
       "name": "invoice_number"
     }
+  ],
+   "phrase": [
+    {
+      "name": "celkova_suma",
+      "text": "Celková suma faktúry",
+      "type": "decimal"
+    }
   ]
 }

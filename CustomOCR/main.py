@@ -14,7 +14,7 @@ from Utils import *
 from CustomOCR.Utils import find_template, extract_fields
 
 # document = convert_from_path('..\\Datasets\\faktury\\pdf\\orange\\1.pdf')
-document = convert_from_path('..\\Datasets\\faktury\\pdf\\orange\\table2.pdf')
+document = convert_from_path('..\\Datasets\\faktury\\pdf\\o2\\2.pdf')
 
 # Save PDF as Image so we can select the ROI
 # document[0].save('1.jpg', 'JPEG')
@@ -43,10 +43,11 @@ template = find_template(data)
 
 # if template is found extract based on ROI, if not try to find the keywords and guess the ROI
 if template:
-    if False:
+    # if True:
         extracted_fields = extract_fields(image,template['ROI'])
         print(extracted_fields)
-    else:
+    # else:
         extracted_dynamic_fields = extract_dynamic_fields(image,template['phrase'])
+        print(extracted_dynamic_fields)
 else:
     print('no')
