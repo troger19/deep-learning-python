@@ -1,4 +1,5 @@
 import cv2
+#pip install opencv-python
 
 img = cv2.imread('lena.png')
 thres = 0.5
