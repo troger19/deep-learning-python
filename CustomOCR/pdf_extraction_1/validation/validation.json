@@ -1,0 +1,34 @@
+{
+  "files": [
+    {
+      "filename": "impa.pdf",
+      "values": {
+        "suma": "1416,23",
+        "ecv": "ZA-609FK",
+        "vin": "WAUZZZ4GXCN057108",
+        "iban": "SK40 0200 0000 00129744 8432"
+      }
+    },
+    {
+      "filename": "melisko.pdf",
+      "values": {
+        "suma": "695,28",
+        "iban": "SK87 7500 0000 0040 1158 8098"
+      }
+    },
+    {
+      "filename": "peugeot.pdf",
+      "values": {
+        "suma": "2084,63",
+        "iban": "SK11 1111 0000 0000 9509 9006"
+      }
+    },
+      {
+      "filename": "autonova.pdf",
+      "values": {
+        "suma": "616,52",
+        "iban": "SK12 0900 0000 0000 9328 5075"
+      }
+    }
+  ]
+}
