@@ -23,11 +23,23 @@
         "iban": "SK11 1111 0000 0000 9509 9006"
       }
     },
-      {
+    {
       "filename": "autonova.pdf",
       "values": {
         "suma": "616,52",
         "iban": "SK12 0900 0000 0000 9328 5075"
+      }
+    },
+    {
+      "filename": "blocek1.jpg",
+      "values": {
+        "suma": "143,28"
+      }
+    },
+    {
+      "filename": "lidl.pdf",
+      "values": {
+        "suma": "8,83"
       }
     }
   ]
