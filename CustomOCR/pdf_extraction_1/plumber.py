@@ -29,6 +29,7 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
 phrases_to_extract = {'suma': 'SUMA ÚHRADE', 'iban': 'IBAN','vin': 'VIN','ecv': 'ECV'}
+extraction_method='QR'
 
 def extract_values_from_file(full_path):
     start_time = time.time()
@@ -45,14 +46,17 @@ def extract_values_from_file(full_path):
                 extracted_text = first_page.extract_text()
                 if bool(extracted_text) and any(char.isdigit() for char in extracted_text):
                     print('Extrahujem text z PDF')
+                    extraction_method = 'PDF TEXT'
                     unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
-                    print(unaccented_upper_text)
+                    # print(unaccented_upper_text)
                     extracted_values = extract_pdf_text(unaccented_upper_text)
                 else:
                     print('pouzivam OCR')
+                    extraction_method = 'OCR'
                     pdf = convert_from_path(full_path)
                     extracted_values = extract_dynamic_fields(np.array(pdf[len(pdf)-1]), phrases_to_extract)  # spravit dicsitoonary.. uhrada:decimal  IBAN:iban
         elif extension in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
+            extraction_method = 'OCR'
             img = cv2.imread(full_path)
             extracted_values = extract_dynamic_fields(img, phrases_to_extract)
         else:
@@ -64,9 +68,10 @@ def extract_values_from_file(full_path):
     elapsed_time = time.time() - start_time
     elapsed_time = time.strftime("%M:%S", time.gmtime(elapsed_time))
     print(elapsed_time)
-    calculate_accuracy(os.path.basename(full_path), extracted_values,elapsed_time)
+    calculate_accuracy(os.path.basename(full_path),extraction_method, extracted_values,elapsed_time)
 
 for i,y in enumerate(invoices_list):
+    print(y)
     extract_values_from_file(path+y)
 
 

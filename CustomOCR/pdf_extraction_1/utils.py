@@ -16,7 +16,7 @@ amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount = 'UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)'
 reg_total_amount1 = 'UHRAD(.*)(e|eur|EUR|€|euro)(?:\s|$)\d+\s*\d+\s*\d+[.,]?\d+'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = 'SK\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}|SK\d{22}'
+reg_iban = '[5S]K\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}|SK\d{22}'
 reg_vin = '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))'
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+','\d+[.,]?\d+']
 
@@ -76,7 +76,7 @@ def load_target_values(filename):
             return {}
 
 
-def calculate_accuracy(filename, extracted_values,elapsed_time):
+def calculate_accuracy(filename,extraction_method, extracted_values,elapsed_time):
     print('extracted_values =>', extracted_values)
 
     target_values = load_target_values(filename)
@@ -90,7 +90,7 @@ def calculate_accuracy(filename, extracted_values,elapsed_time):
                 count += 1
         accuracy = count / len(target_values.keys()) * 100
         print('presnost = ', accuracy, ' %')
-    save_to_csv(filename,target_values,extracted_values,elapsed_time)
+    save_to_csv(filename,extraction_method,target_values,extracted_values,elapsed_time)
 
 
 def extract_qr_code(full_path):
@@ -134,7 +134,7 @@ def extract_dynamic_fields(image, phrases):
     extracted_dynamic_fields_temp = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
     extracted_dynamic_fields1_temp = pytesseract.image_to_data(threshold_img1, lang='SLK')
-    print(extracted_dynamic_fields_temp)
+    # print(extracted_dynamic_fields_temp)
     # print(extracted_dynamic_fields1_temp)
     # add as key:value pair
     for i, (key,value) in enumerate(phrases.items()):
@@ -164,7 +164,10 @@ def find_final_value(row, template_type):
         return amount.replace('.',',')
     elif template_type =='iban':
         row1 = re.sub(r'[^a-zA-Z0-9]', '', row)
-        return re.search(reg_iban, str(row1)).group()
+        group = re.search(reg_iban, str(row1)).group()
+        if group.startswith('5'):
+            group='S'+group[1:]
+        return group
     elif template_type =='vin':
         return re.search(reg_vin, str(row)).group()
     elif template_type == 'ecv':
@@ -222,11 +225,15 @@ def try_multiple_regex(row, regexp):
 
     return final_extraction
 
-def save_to_csv(filename,target_values, extracted_values,elapsed_time):
-    csv_columns= ['filename', 'duration','method','suma_target', 'suma_extracted']
+def save_to_csv(filename,extraction_method,target_values, extracted_values,elapsed_time):
+    csv_columns= ['filename', 'duration','method','suma_target', 'suma_extracted','iban_target','iban_extracted','ecv_target', 'ecv_extracted','vin_target','vin_extracted' ]
     dict_data = [
-        {'filename': filename,'duration':elapsed_time, 'method':'OCR','suma_target': target_values.get('suma',' -'), 'suma_extracted': extracted_values.get('suma',' -')}
-    ]
+        {'filename': filename,'duration':elapsed_time, 'method':extraction_method,
+         'suma_target': target_values.get('suma',' -'), 'suma_extracted': extracted_values.get('suma',' -'),
+         'iban_target': target_values.get('iban',' -'), 'iban_extracted': extracted_values.get('iban',' -'),
+         'ecv_target': target_values.get('ecv',' -'), 'ecv_extracted': extracted_values.get('ecv',' -'),
+         'vin_target': target_values.get('vin',' -'), 'vin_extracted': extracted_values.get('vin',' -'),
+         }]
     csv_file = "data.csv"
     try:
         with open(csv_file, 'a',newline='') as csvfile:
