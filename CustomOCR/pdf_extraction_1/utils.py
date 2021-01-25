@@ -10,6 +10,7 @@ import requests
 from os.path import splitext
 import pytesseract
 import numpy as np
+import csv
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount = 'UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)'
@@ -17,7 +18,7 @@ reg_total_amount1 = 'UHRAD(.*)(e|eur|EUR|€|euro)(?:\s|$)\d+\s*\d+\s*\d+[.,]?\d
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
 reg_iban = 'SK\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}|SK\d{22}'
 reg_vin = '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))'
-
+reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+','\d+[.,]?\d+']
 
 def extract_pdf_text(unaccented_upper_text):
     extracted_values = {}
@@ -71,19 +72,25 @@ def load_target_values(filename):
         for i, file in enumerate(template['files']):
             if file['filename'] == filename:
                 return file['values']
+        else:
+            return {}
 
 
-def calculate_accuracy(filename, extracted_values):
-    target_values = load_target_values(filename)
-
-    print('target_values =>', target_values)
+def calculate_accuracy(filename, extracted_values,elapsed_time):
     print('extracted_values =>', extracted_values)
-    count = 0
-    for key in target_values.keys():
-        if target_values.get(key) == extracted_values.get(key):
-            count += 1
-    accuracy = count / len(target_values.keys()) * 100
-    print('presnost = ', accuracy, ' %')
+
+    target_values = load_target_values(filename)
+    if not target_values:
+        print('Nepodarilo sa nacitat cielove hodnoty pre porovnanie')
+    else:
+        print('target_values =>', target_values)
+        count = 0
+        for key in target_values.keys():
+            if target_values.get(key) == extracted_values.get(key):
+                count += 1
+        accuracy = count / len(target_values.keys()) * 100
+        print('presnost = ', accuracy, ' %')
+    save_to_csv(filename,target_values,extracted_values,elapsed_time)
 
 
 def extract_qr_code(full_path):
@@ -104,15 +111,15 @@ def extract_qr_code(full_path):
         qrcode = qr[0].data.decode('utf-8')
         ekasa_response = requests.post('https://ekasa.financnasprava.sk/mdu/api/v1/opd/receipt/find',
                                        json={"receiptId": qrcode})
-        if ekasa_response:
+        if ekasa_response and ekasa_response.json()['receipt']:
             extracted_values.update({'suma': str(ekasa_response.json()['receipt']['totalPrice']).replace('.', ',')})
 
     return extracted_values
 
 
-def extract_dynamic_fields(page, phrases):
+def extract_dynamic_fields(image, phrases):
     dynamic_fields = {}
-    image = np.array(page[0])  ### !!! TODO tu treba loopovat bacha, iba prva strana
+     ### !!! TODO tu treba loopovat bacha, iba prva strana
     height, width = image.shape[:2]
     # converting image into gray scale image
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -153,28 +160,32 @@ def check_and_extract(key,phrase, extracted_dynamic_fields):
 # find the value based on defined type
 def find_final_value(row, template_type):
     if template_type =='suma':
-        return re.search('\d+\s*\d+\s*\d+[.,]?\d+', str(row)).group().replace(' ','')
-    # if template_type['type'] in 'decimal':
-    #     return re.findall('\d+[.,]\d+', str(row))
-    # elif template_type['type'] in 'integer':
-    #     return re.findall('\d+', str(row))
+        amount = try_multiple_regex(row, reg_total_amount_number)
+        return amount.replace('.',',')
     elif template_type =='iban':
         row1 = re.sub(r'[^a-zA-Z0-9]', '', row)
         return re.search(reg_iban, str(row1)).group()
+    elif template_type =='vin':
+        return re.search(reg_vin, str(row)).group()
+    elif template_type == 'ecv':
+        return re.search(reg_ecv, str(row)).group()
 
 
 def extract_correct_row(extracted_dynamic_fields, phrase):
     # split tepmlate phrase into words
-    # text_split = phrase['text'].split()
-    text_split = [phrase,phrase+':']
-    # take first word from phrase and find its coordinates.. the word can occurs multiple time on page
+    phrase_split = phrase.split()
+    text_split = []
+    for i in phrase_split:
+        text_split.append(i)
+        text_split.append(i+':')
     extracted_dynamic_fields['text'] = extracted_dynamic_fields['text'].str.upper()
-    top_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == text_split[0]]['top'].values
-    # left_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == text_split[0]]['left'].values
-
-    if not top_values:
-        top_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == text_split[1]]['top'].values
-        # left_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == text_split[1]]['left'].values
+    for word in text_split:
+        top_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['top'].values
+        if len(top_values) == 1:
+            break
+        if len(top_values) > 1:
+            print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO co robit v takomto pripade
+            return None
     rows = {}
     # loop through all TOP coordinates of the 1. word
     for top in top_values:
@@ -199,3 +210,29 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
         if True:
             # if all words matched then its correct row
             return correct_row
+
+
+def try_multiple_regex(row, regexp):
+    final_extraction = None
+    for i in regexp:
+        final_extraction = re.search(i, str(row))
+        if final_extraction:
+            final_extraction = final_extraction.group().replace(' ', '')
+            break
+
+    return final_extraction
+
+def save_to_csv(filename,target_values, extracted_values,elapsed_time):
+    csv_columns= ['filename', 'duration','method','suma_target', 'suma_extracted']
+    dict_data = [
+        {'filename': filename,'duration':elapsed_time, 'method':'OCR','suma_target': target_values.get('suma',' -'), 'suma_extracted': extracted_values.get('suma',' -')}
+    ]
+    csv_file = "data.csv"
+    try:
+        with open(csv_file, 'a',newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=csv_columns)
+            for data in dict_data:
+                writer.writerow(data)
+    except IOError:
+        print("I/O error")
+

@@ -9,6 +9,50 @@
         "iban": "SK40 0200 0000 00129744 8432"
       }
     },
+        {
+      "filename": "autofun.pdf",
+      "values": {
+        "suma": "408,20",
+        "ecv": "LM-066DF",
+        "iban": "SK1756000000008108407001"
+      }
+    },
+            {
+      "filename": "autosklo.jpg",
+      "values": {
+        "suma": "66,95",
+        "ecv": "PT361AZ",
+        "vin": "3C4PFBCG1FT579562",
+        "iban": "SK7211000000002627702339"
+      }
+    },
+        {
+      "filename": "suzuki1.pdf",
+      "values": {
+        "suma": "1281,16",
+        "ecv": "NR783IL",
+        "vin": "TSMLYE21S00229245",
+        "iban": "SK9375000000004022038091"
+      }
+    },
+            {
+      "filename": "suzuki2.pdf",
+      "values": {
+        "suma": "1445,44",
+        "ecv": "NR979JO",
+        "vin": "TSMLYD21S00448754",
+        "iban": "SK9375000000004022038091"
+      }
+    },
+                {
+      "filename": "suzuki3.pdf",
+      "values": {
+        "suma": "1295,45",
+        "ecv": "MY-939BF",
+        "vin": "TSMLYEA1S00447223",
+        "iban": "SK8602000000003204352853"
+      }
+    },
     {
       "filename": "melisko.pdf",
       "values": {
@@ -20,14 +64,21 @@
       "filename": "peugeot.pdf",
       "values": {
         "suma": "2084,63",
-        "iban": "SK11 1111 0000 0000 9509 9006"
+        "iban": "SK1111110000000095099006"
       }
     },
     {
       "filename": "autonova.pdf",
       "values": {
         "suma": "616,52",
-        "iban": "SK12 0900 0000 0000 9328 5075"
+        "iban": "SK1209000000000093285075",
+        "ecv": "KK-098CL"
+      }
+    },
+        {
+      "filename": "anders.pdf",
+      "values": {
+        "suma": "211,00"
       }
     },
     {
