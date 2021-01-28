@@ -28,7 +28,7 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
-phrases_to_extract = {'suma': 'SUMA ÚHRADE', 'iban': 'IBAN','vin': 'VIN','ecv': 'ECV'}
+phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE', 'ico': 'ICO IČO','iban': 'IBAN','vin': 'VIN','ecv': 'ECV'}
 
 
 def extract_values_from_file(full_path):
