@@ -15,19 +15,19 @@ import xlrd
 import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
-reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)']
+reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)','UHRADE.*(?:\s)(\d+[,.]\d+)']
 
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}|SK\d{22}'
-reg_vin = '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}'
+reg_vin = ['(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))','(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+', '\d+[.,]?\d+']
-reg_ico = ['ICO\s*?.?\s*?(\d{8})','ICO\s*?.?\s*?(\d{2} \d{3} \d{3})']
+reg_ico = ['ICO\s*?.?\s*?(\d{8})','ICO\s*?.?\s*?(\d{2} \d{3} \d{3})','(\d{8})\s*DIC:']
 
 
 def extract_pdf_text(unaccented_upper_text, extracted_values):
     extracted_values = extracted_values
     # SUMA
-    amount_str = try_multiple_regex(unaccented_upper_text, reg_total_amount2,1)
+    amount_str = try_multiple_regex(unaccented_upper_text, reg_total_amount2,1,True)
     if amount_str:
         m = re.search('\d', amount_str)
         if m:
@@ -49,14 +49,20 @@ def extract_pdf_text(unaccented_upper_text, extracted_values):
         extracted_values.update({'iban': IBAN.group()})
 
     # VIN
-    vin = re.findall(reg_vin, unaccented_upper_text)
+    # vin = re.findall(reg_vin, unaccented_upper_text)
+    vin = try_multiple_regex(unaccented_upper_text, reg_vin)
     if vin:
-        for i, v in enumerate(vin):
-            print(vin[i][0])
-            if (re.search('SK\d{2}', vin[i][0])):
-                continue
-            else:
-                extracted_values.update({'vin': vin[i][0].replace(' ', '')})
+        extracted_values.update({'vin': vin.replace(' ', '')})
+
+
+    #
+    # if vin:
+    #     for i, v in enumerate(vin):
+    #         print(vin[i][0])
+    #         if (re.search('SK\d{2}', vin[i][0])):
+    #             continue
+    #         else:
+    #             extracted_values.update({'vin': vin[i][0].replace(' ', '')})
         # print(vin.group())
 
     # ICO
@@ -190,17 +196,18 @@ def extract_spd(qrcode,extracted_values):
 
 
 
-def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_field2):
+def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2):
+    all_text_from_all_versions = re.sub('nan', '',str(extracted_dynamic_fields['text'].values) + (str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
     for i in dynamic_fields:
         if i == 'ecv' and dynamic_fields[i] is None:
-            search = re.search(reg_ecv, str(extracted_dynamic_fields))
+            search = re.search(reg_ecv, all_text_from_all_versions)
             if search:
                 dynamic_fields.update({i: search.group()})
         if i == 'vin' and dynamic_fields[i] is None:
-            replace = str(extracted_dynamic_fields).replace(' ', '').replace('\n', '').strip()
-            search = re.search(reg_vin, replace)
+            replace =all_text_from_all_versions.replace(' ', '').replace('\n', '').strip()
+            search = try_multiple_regex(replace, reg_vin)
             if search:
-                dynamic_fields.update({i: search.group()})
+                dynamic_fields.update({i: search})
     return dynamic_fields
 
 # dynamicke vytahovanie hodnot podla regex
@@ -222,29 +229,26 @@ def extract_dynamic_fields(image, phrases, extracted_values):
     # gfg = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields = pytesseract.image_to_data(image, lang='SLK', output_type='data.frame')
     extracted_dynamic_fields_temp = pytesseract.image_to_data(image, lang='SLK')
-    # extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
-    # extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
-    # extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
-    # extracted_dynamic_fields1_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
+    extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
+    extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
+    extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
+    extracted_dynamic_fields_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
     # print(extracted_dynamic_fields_temp)
-    # print(extracted_dynamic_fields1_temp)
+    # print(extracted_dynamic_fields_temp1)
+    # print(extracted_dynamic_fields_temp2)
     # add as key:value pair
     for i, (key, value) in enumerate(phrases.items()):
         target_word = check_and_extract(key, value, extracted_dynamic_fields)
         if not target_word:
-            extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
-            extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
             target_word = check_and_extract(key, value, extracted_dynamic_fields1)
         if not target_word:
-            extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
-            extracted_dynamic_fields1_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
             target_word = check_and_extract(key, value, extracted_dynamic_fields2)
 
         # if target_word is not None:
         dynamic_fields.update({key: target_word})
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
-    dynamic_fields = do_dummy_matching(dynamic_fields,extracted_dynamic_fields_temp,extracted_dynamic_fields_temp1,extracted_dynamic_fields1_temp2)
+    dynamic_fields = do_dummy_matching(dynamic_fields,extracted_dynamic_fields,extracted_dynamic_fields1,extracted_dynamic_fields2)
     # return JSON like object with phrase name and extracted values (amounts in EUR, etc..)  -> sum_total:20,26
     return dynamic_fields
 
@@ -262,7 +266,7 @@ def check_and_extract(key, phrase, extracted_dynamic_fields):
 # hladanie konkretnej hodnoty podla zadefinovaneho typu. Vstupom je cely riadkok extrahovaneho textu, v ktorom by sa mala nachadzat hladana hodnota
 def find_final_value(row, template_type):
     if template_type == 'cena_s_dph':
-        amount = try_multiple_regex(row, reg_total_amount_number)
+        amount = try_multiple_regex(row, reg_total_amount_number,None,True)
         if amount:
             return amount.replace('.', ',')
         else:
@@ -278,10 +282,11 @@ def find_final_value(row, template_type):
         else:
             return '-'
     elif template_type == 'vin':
-        replace = str(row).replace(' ', '').replace('\n', '').strip()
-        search = re.search(reg_vin, replace)
+        replace = re.sub('\s+', '', str(row)).replace('\n', '').strip()
+        search = try_multiple_regex(replace,reg_vin)
+        # search = re.search(reg_vin, replace)
         if search:
-            return search.group()
+            return search
         else:
             return '-'
     elif template_type == 'ecv':
@@ -291,9 +296,9 @@ def find_final_value(row, template_type):
         else:
             return '-'
     elif template_type == 'ico':
-        amount = try_multiple_regex(row, reg_ico,1)
-        if amount:
-            return amount.replace('.', ',')
+        search = try_multiple_regex(row, reg_ico,1)
+        if search:
+            return search.replace('.', ',')
         else:
             return '-'
 
@@ -342,7 +347,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
 
 
 # metoda na vyskusanie hladania pre pole regexpov.. pozor, poradie je dolezite, ak sa slovo najde loop konci, preto treba zadavat regexy od najvaic specifickej k najmenej specifickej
-def try_multiple_regex(row, regexp,group=None):
+def try_multiple_regex(row, regexp,group=None,is_number=False):
     final_extraction = None
     for i in regexp:
         final_extraction = re.search(i, str(row))
@@ -351,7 +356,9 @@ def try_multiple_regex(row, regexp,group=None):
                 final_extraction = final_extraction.group(group).replace(' ', '')
             else:
                 final_extraction = final_extraction.group().replace(' ', '')
-            break
+            if is_number:
+                if re.match('\d', final_extraction):
+                    break
 
     return final_extraction
 

@@ -28,8 +28,11 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
-phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE', 'ico': 'ICO IČO','iban': 'IBAN','vin': 'VIN','ecv': 'ECV'}
+phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE', 'ico': 'ICO IČO','iban': 'IBAN','vin': 'VIN','ecv': 'ECV EČV'}
 
+
+def are_all_values_extracted(extracted_values):
+    extracted_values
 
 def extract_values_from_file(full_path):
     img_pdf = None
@@ -43,7 +46,7 @@ def extract_values_from_file(full_path):
         if extension =='.pdf':
         # faktura
             with pdfplumber.open(full_path) as pdf:
-                for i,page in enumerate(pdf.pages):
+                for i,page in enumerate(pdf.pages[:2]):
                     first_page =page
                     extracted_text = first_page.extract_text()
                     if bool(extracted_text) and any(char.isdigit() for char in extracted_text):
@@ -58,6 +61,8 @@ def extract_values_from_file(full_path):
                         if img_pdf is None:
                             img_pdf = convert_from_path(full_path)
                         extracted_values = extract_dynamic_fields(np.array(img_pdf[i]), phrases_to_extract,extracted_values)
+                    if are_all_values_extracted(extracted_values):
+                        break
         elif extension in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
             extraction_method = 'OCR'
             img = cv2.imdecode(np.fromfile(full_path, dtype=np.uint8), -1)
