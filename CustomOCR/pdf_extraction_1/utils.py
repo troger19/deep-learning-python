@@ -66,7 +66,7 @@ def extract_pdf_text(unaccented_upper_text, extracted_values):
         # print(vin.group())
 
     # ICO
-    ICO = try_multiple_regex(unaccented_upper_text, reg_ico,1)
+    ICO = try_multiple_regex(unaccented_upper_text, reg_ico,1,True)
     if ICO:
         extracted_values.update({'ico': ICO})
 
@@ -100,10 +100,10 @@ def load_target_values_excel1():
         cislo_fakt = sheet['E' + str(row)].value
         datum_dodania = sheet['F' + str(row)].value
         datum_vyhotovenia = sheet['G' + str(row)].value
-        cez_bez_dph = sheet['H' + str(row)].value
-        cena_s_dph = sheet['I' + str(row)].value
-        mena = sheet['J' + str(row)].value
-        ecv = sheet['K' + str(row)].value
+        ecv = sheet['H' + str(row)].value
+        cez_bez_dph = sheet['I' + str(row)].value
+        cena_s_dph = sheet['J' + str(row)].value
+        mena = sheet['K' + str(row)].value
         vin = sheet['L' + str(row)].value
 
         total_info.setdefault(filename, {'nazov': None,
@@ -180,6 +180,13 @@ def extract_qr_code(full_path,extraction_method):
             else:
                 print('PAY-By-Square')
                 extraction_method = 'QR - PayBySquare'
+                pay_by_square_response = requests.get('http://localhost:8102/pdf/v1/qrcode/'+qrcode)
+                if pay_by_square_response and pay_by_square_response.json()['payments']:
+                    extracted_values.update(
+                        {'cena_s_dph': str(pay_by_square_response.json()['payments'][0]['amount']).replace('.', ',')}
+                    )
+                    extracted_values.update(
+                        {'iban': pay_by_square_response.json()['payments'][0]['bankAccounts'][0]['iban']})
 
 
     return extracted_values,extraction_method
@@ -353,9 +360,9 @@ def try_multiple_regex(row, regexp,group=None,is_number=False):
         final_extraction = re.search(i, str(row))
         if final_extraction:
             if group:
-                final_extraction = final_extraction.group(group).replace(' ', '')
+                final_extraction = final_extraction.group(group).replace(' ', '').replace(':','')
             else:
-                final_extraction = final_extraction.group().replace(' ', '')
+                final_extraction = final_extraction.group().replace(' ', '').replace(':','')
             if is_number:
                 if re.match('\d', final_extraction):
                     break

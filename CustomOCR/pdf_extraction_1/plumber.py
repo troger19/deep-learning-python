@@ -32,7 +32,10 @@ phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE', 'ico': 'ICO IČO','ib
 
 
 def are_all_values_extracted(extracted_values):
-    extracted_values
+    if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None  and extracted_values.get('ecv') is not None):
+        return True
+    else:
+        return False
 
 def extract_values_from_file(full_path):
     img_pdf = None
