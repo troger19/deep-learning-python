@@ -15,60 +15,70 @@ import xlrd
 import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
-reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)','UHRADE.*(?:\s)(\d+[,.]\d+)']
+reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
+                     'UHRADE.*(?:\s)(\d+[,.]\d+)']
 
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
 reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}'
-reg_vin = ['(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))','(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
+reg_vin = [
+    '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
+    '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+', '\d+[.,]?\d+']
-reg_ico = ['ICO\s*?.?\s*?(\d{8})','ICO\s*?.?\s*?(\d{2} \d{3} \d{3})','(\d{8})\s*DIC:']
+reg_ico = ['ICO\s*?.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:']
 
 
-def extract_pdf_text(unaccented_upper_text, extracted_values):
+def extract_ico(unaccented_upper_text):
+    for i in reg_ico:
+        final_extraction = re.findall(i, str(unaccented_upper_text))
+        count_ico = len(final_extraction)
+        if count_ico == 1:
+            ICO = final_extraction[0].replace(' ', '').replace(':', '')
+        else:
+            continue
+        return ICO
+
+def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
     extracted_values = extracted_values
     # SUMA
-    amount_str = try_multiple_regex(unaccented_upper_text, reg_total_amount2,1,True)
-    if amount_str:
-        m = re.search('\d', amount_str)
-        if m:
-            amount_str = amount_str[m.start():]
-            amount = re_replace(amount_str)
-            # print(amount)
-            extracted_values.update({'cena_s_dph': amount})
+    if extracted_values.get('cena_s_dph') is None:
+        amount_str = try_multiple_regex(unaccented_upper_text, reg_total_amount2, 1, True)
+        if amount_str:
+            m = re.search('\d', amount_str)
+            if m:
+                amount_str = amount_str[m.start():]
+                amount = re_replace(amount_str)
+                extracted_values.update({'cena_s_dph': amount})
 
     # ECV
-    license_plate_number = re.search(reg_ecv, unaccented_upper_text)
-    if license_plate_number:
-        # print(license_plate_number.group())
-        extracted_values.update({'ecv': license_plate_number.group()})
+    if extracted_values.get('ecv') is None:
+        license_plate_number = re.search(reg_ecv, unaccented_upper_text)
+        if license_plate_number:
+            extracted_values.update({'ecv': license_plate_number.group()})
 
     # IBAN
-    IBAN = re.search(reg_iban, unaccented_upper_text)
-    if IBAN:
-        # print(IBAN.group())
-        extracted_values.update({'iban': IBAN.group()})
+    if extracted_values.get('iban') is None:
+        iban = re.search(reg_iban, unaccented_upper_text)
+        if iban:
+            extracted_values.update({'iban': iban.group()})
 
     # VIN
     # vin = re.findall(reg_vin, unaccented_upper_text)
-    vin = try_multiple_regex(unaccented_upper_text, reg_vin)
-    if vin:
-        extracted_values.update({'vin': vin.replace(' ', '')})
-
-
-    #
-    # if vin:
-    #     for i, v in enumerate(vin):
-    #         print(vin[i][0])
-    #         if (re.search('SK\d{2}', vin[i][0])):
-    #             continue
-    #         else:
-    #             extracted_values.update({'vin': vin[i][0].replace(' ', '')})
-        # print(vin.group())
+    if extracted_values.get('vin') is None:
+        vin = try_multiple_regex(unaccented_upper_text, reg_vin)
+        if vin:
+            extracted_values.update({'vin': vin.replace(' ', '')})
 
     # ICO
-    ICO = try_multiple_regex(unaccented_upper_text, reg_ico,1,True)
-    if ICO:
-        extracted_values.update({'ico': ICO})
+    # ICO = try_multiple_regex(unaccented_upper_text, reg_ico,1,True)
+    if extracted_values.get('ico') is None:
+        ico = extract_ico(unaccented_upper_text)
+        if ico:
+            extracted_values.update({'ico': ico})
+        else:
+            if extracted_values.get('iban'):
+                ico = ico_servisy.get(extracted_values.get('iban'))
+                if ico:
+                    extracted_values.update({'ico': ico})
 
     return extracted_values
 
@@ -134,7 +144,24 @@ def load_target_values_excel1():
     return total_info
 
 
-def calculate_accuracy(filename,target_values, extraction_method, extracted_values, elapsed_time):
+def load_ico_servisy():
+    ps = openpyxl.load_workbook('validation\\ico_servisy.xlsx')
+    sheet = ps['ico']
+    print(sheet.max_row)
+    ico = []
+    iban = []
+    iban_ico = {}
+    for i, row in enumerate(sheet.rows):
+        # data[i]['ico'] = row[0].value
+        # data[i]['iban'] = row[1].value
+        ico.append(row[0].value)
+        iban.append(row[1].value)
+    iban_ico = dict(zip(iban, ico))
+
+    return iban_ico
+
+
+def calculate_accuracy(filename, target_values, extraction_method, extracted_values, elapsed_time):
     print('extracted_values =>', extracted_values)
     if not target_values:
         print('Nepodarilo sa nacitat cielove hodnoty pre porovnanie')
@@ -152,7 +179,7 @@ def calculate_accuracy(filename,target_values, extraction_method, extracted_valu
     save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time)
 
 
-def extract_qr_code(full_path,extraction_method):
+def extract_qr_code(full_path, extraction_method):
     extracted_values = {}
     extension = splitext(full_path)[1]
     qr = None
@@ -168,19 +195,20 @@ def extract_qr_code(full_path,extraction_method):
 
     if qr and qr[0][1] == 'QRCODE':  # ak naslo zober prvy
         qrcode = qr[0].data.decode('utf-8')
-        if re.match('^SPD\*\d\.\d\*', qrcode):   # QR kod typu SPD - Short Payment Descriptor
+        if re.match('^SPD\*\d\.\d\*', qrcode):  # QR kod typu SPD - Short Payment Descriptor
             extraction_method = 'QR - SPD'
-            extract_spd(qrcode,extracted_values)
+            extract_spd(qrcode, extracted_values)
         else:
             ekasa_response = requests.post('https://ekasa.financnasprava.sk/mdu/api/v1/opd/receipt/find',
-                                       json={"receiptId": qrcode})
+                                           json={"receiptId": qrcode})
             if ekasa_response and ekasa_response.json()['receipt']:
-             extracted_values.update({'cena_s_dph': str(ekasa_response.json()['receipt']['totalPrice']).replace('.', ',')})
-             extraction_method = 'QR - Ekasa'
+                extracted_values.update(
+                    {'cena_s_dph': str(ekasa_response.json()['receipt']['totalPrice']).replace('.', ',')})
+                extraction_method = 'QR - Ekasa'
             else:
                 print('PAY-By-Square')
                 extraction_method = 'QR - PayBySquare'
-                pay_by_square_response = requests.get('http://localhost:8102/pdf/v1/qrcode/'+qrcode)
+                pay_by_square_response = requests.get('http://localhost:8102/pdf/v1/qrcode/' + qrcode)
                 if pay_by_square_response and pay_by_square_response.json()['payments']:
                     extracted_values.update(
                         {'cena_s_dph': str(pay_by_square_response.json()['payments'][0]['amount']).replace('.', ',')}
@@ -188,39 +216,44 @@ def extract_qr_code(full_path,extraction_method):
                     extracted_values.update(
                         {'iban': pay_by_square_response.json()['payments'][0]['bankAccounts'][0]['iban']})
 
-
-    return extracted_values,extraction_method
+    return extracted_values, extraction_method
 
 
 # vytiahni potrebne fieldy z SPD formatu, ktory je v tvare SPD*1.0*ACC:CZ64030*AM:6897*CC:CZK*DT:2020031....
-def extract_spd(qrcode,extracted_values):
+def extract_spd(qrcode, extracted_values):
     split = qrcode.split('*')
     spd = {}
     for s in split[2:-1]:
         s_split = s.split(':')
         spd.update({s_split[0]: s_split[1]})
-    extracted_values.update({'cena_s_dph':spd['AM']})
+    extracted_values.update({'cena_s_dph': spd['AM']})
 
 
-
-def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2):
-    all_text_from_all_versions = re.sub('nan', '',str(extracted_dynamic_fields['text'].values) + (str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
+def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy):
+    all_text_from_all_versions = re.sub('nan', '', str(extracted_dynamic_fields['text'].values) + (
+        str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
     for i in dynamic_fields:
         if i == 'ecv' and dynamic_fields[i] is None:
             search = re.search(reg_ecv, all_text_from_all_versions)
             if search:
                 dynamic_fields.update({i: search.group()})
         if i == 'vin' and dynamic_fields[i] is None:
-            replace =all_text_from_all_versions.replace(' ', '').replace('\n', '').strip()
+            replace = all_text_from_all_versions.replace(' ', '').replace('\n', '').strip()
             search = try_multiple_regex(replace, reg_vin)
             if search:
                 dynamic_fields.update({i: search})
+        if i == 'ico' and dynamic_fields[i] is None:
+            if dynamic_fields.get('iban'):
+                ico = ico_servisy.get(dynamic_fields.get('iban'))
+                if ico:
+                    dynamic_fields.update({i: ico})
     return dynamic_fields
 
+
 # dynamicke vytahovanie hodnot podla regex
-def extract_dynamic_fields(image, phrases, extracted_values):
+def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
     dynamic_fields = extracted_values
-    if (len(image.shape) >2):
+    if (len(image.shape) > 2):
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray_image = image
@@ -245,17 +278,19 @@ def extract_dynamic_fields(image, phrases, extracted_values):
     # print(extracted_dynamic_fields_temp2)
     # add as key:value pair
     for i, (key, value) in enumerate(phrases.items()):
-        target_word = check_and_extract(key, value, extracted_dynamic_fields)
-        if not target_word:
-            target_word = check_and_extract(key, value, extracted_dynamic_fields1)
-        if not target_word:
-            target_word = check_and_extract(key, value, extracted_dynamic_fields2)
+        if dynamic_fields.get(key) is None:
+            target_word = check_and_extract(key, value, extracted_dynamic_fields)
+            if not target_word:
+                target_word = check_and_extract(key, value, extracted_dynamic_fields1)
+            if not target_word:
+                target_word = check_and_extract(key, value, extracted_dynamic_fields2)
 
-        # if target_word is not None:
-        dynamic_fields.update({key: target_word})
+            # if target_word is not None:
+            dynamic_fields.update({key: target_word})
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
-    dynamic_fields = do_dummy_matching(dynamic_fields,extracted_dynamic_fields,extracted_dynamic_fields1,extracted_dynamic_fields2)
+    dynamic_fields = do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1,
+                                       extracted_dynamic_fields2,ico_servisy)
     # return JSON like object with phrase name and extracted values (amounts in EUR, etc..)  -> sum_total:20,26
     return dynamic_fields
 
@@ -273,7 +308,7 @@ def check_and_extract(key, phrase, extracted_dynamic_fields):
 # hladanie konkretnej hodnoty podla zadefinovaneho typu. Vstupom je cely riadkok extrahovaneho textu, v ktorom by sa mala nachadzat hladana hodnota
 def find_final_value(row, template_type):
     if template_type == 'cena_s_dph':
-        amount = try_multiple_regex(row, reg_total_amount_number,None,True)
+        amount = try_multiple_regex(row, reg_total_amount_number, None, True)
         if amount:
             return amount.replace('.', ',')
         else:
@@ -290,7 +325,7 @@ def find_final_value(row, template_type):
             return '-'
     elif template_type == 'vin':
         replace = re.sub('\s+', '', str(row)).replace('\n', '').strip()
-        search = try_multiple_regex(replace,reg_vin)
+        search = try_multiple_regex(replace, reg_vin)
         # search = re.search(reg_vin, replace)
         if search:
             return search
@@ -303,16 +338,15 @@ def find_final_value(row, template_type):
         else:
             return '-'
     elif template_type == 'ico':
-        search = try_multiple_regex(row, reg_ico,1)
-        if search:
-            return search.replace('.', ',')
-        else:
-            return '-'
+        return extract_ico(row)
+        # search = try_multiple_regex(row, reg_ico,1,True)
+        # return ICO
+
 
 
 # hlada sa dana fraza ku ktorej sa priradi jej koordinat TOP.. nasledne sa vytiahnu vsetky slova v riadku podla predpokladu, ze ich TOP hodnota pripadne do intervalu [TOP-8, TOP+100]
 def extract_correct_row(extracted_dynamic_fields, phrase):
-    phrase_split = phrase.split()     # split search phrase into words
+    phrase_split = phrase.split()  # split search phrase into words
     text_split = []
     for i in phrase_split:
         text_split.append(i)
@@ -354,15 +388,15 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
 
 
 # metoda na vyskusanie hladania pre pole regexpov.. pozor, poradie je dolezite, ak sa slovo najde loop konci, preto treba zadavat regexy od najvaic specifickej k najmenej specifickej
-def try_multiple_regex(row, regexp,group=None,is_number=False):
+def try_multiple_regex(row, regexp, group=None, is_number=False):
     final_extraction = None
     for i in regexp:
         final_extraction = re.search(i, str(row))
         if final_extraction:
             if group:
-                final_extraction = final_extraction.group(group).replace(' ', '').replace(':','')
+                final_extraction = final_extraction.group(group).replace(' ', '').replace(':', '')
             else:
-                final_extraction = final_extraction.group().replace(' ', '').replace(':','')
+                final_extraction = final_extraction.group().replace(' ', '').replace(':', '')
             if is_number:
                 if re.match('\d', final_extraction):
                     break
@@ -370,14 +404,16 @@ def try_multiple_regex(row, regexp,group=None,is_number=False):
     return final_extraction
 
 
-#ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
+# ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
-    csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted','cena_s_dph_target', 'cena_s_dph_extracted', 'iban_target', 'iban_extracted',
+    csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'cena_s_dph_target',
+                   'cena_s_dph_extracted', 'iban_target', 'iban_extracted',
                    'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
          'ico_target': target_values.get('ico', ' -'), 'ico_extracted': extracted_values.get('ico', ' -'),
-         'cena_s_dph_target': target_values.get('cena_s_dph', ' -'), 'cena_s_dph_extracted': extracted_values.get('cena_s_dph', ' -'),
+         'cena_s_dph_target': target_values.get('cena_s_dph', ' -'),
+         'cena_s_dph_extracted': extracted_values.get('cena_s_dph', ' -'),
          'iban_target': target_values.get('iban', ' -'), 'iban_extracted': extracted_values.get('iban', ' -'),
          'ecv_target': target_values.get('ecv', ' -'), 'ecv_extracted': extracted_values.get('ecv', ' -'),
          'vin_target': target_values.get('vin', ' -'), 'vin_extracted': extracted_values.get('vin', ' -'),

@@ -10,6 +10,9 @@ from os.path import splitext
 import os
 import time
 
+#TODO
+#https://b2bportaltest.csobpoistovna.sk/test/api/skp/swagger-ui.html#/SkpRestController/getVehicleEvidenceUsingGET
+
 # path = '..\\..\\Datasets\\faktury\\faktury_csob\\'
 path = '..\\..\\Datasets\\faktury\\pokus\\'
 # filename = 'anders.jpg'   # square
@@ -28,7 +31,7 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
-phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE', 'ico': 'ICO IČO','iban': 'IBAN','vin': 'VIN','ecv': 'ECV EČV'}
+phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV','vin': 'VIN'}
 
 
 def are_all_values_extracted(extracted_values):
@@ -45,7 +48,7 @@ def extract_values_from_file(full_path):
     extracted_values,extraction_method = extract_qr_code(full_path,extraction_method)
 
     extension = splitext(full_path)[1]
-    if not extracted_values:
+    if not are_all_values_extracted(extracted_values):
         if extension =='.pdf':
         # faktura
             with pdfplumber.open(full_path) as pdf:
@@ -54,22 +57,22 @@ def extract_values_from_file(full_path):
                     extracted_text = first_page.extract_text()
                     if bool(extracted_text) and any(char.isdigit() for char in extracted_text):
                         print('Extrahujem text z PDF')
-                        extraction_method = 'PDF TEXT'
+                        extraction_method = set_extraction_method(extracted_values, extraction_method, 'PDF TEXT')
                         unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
                         # print(unaccented_upper_text)
-                        extracted_values = extract_pdf_text(unaccented_upper_text,extracted_values)
+                        extracted_values = extract_pdf_text(unaccented_upper_text,extracted_values,ico_servisy)
                     else:
                         print('pouzivam OCR')
-                        extraction_method = 'OCR'
+                        extraction_method = set_extraction_method(extracted_values, extraction_method,'OCR')
                         if img_pdf is None:
                             img_pdf = convert_from_path(full_path)
-                        extracted_values = extract_dynamic_fields(np.array(img_pdf[i]), phrases_to_extract,extracted_values)
+                        extracted_values = extract_dynamic_fields(np.array(img_pdf[i]), phrases_to_extract,extracted_values,ico_servisy)
                     if are_all_values_extracted(extracted_values):
                         break
         elif extension in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
-            extraction_method = 'OCR'
+            extraction_method = set_extraction_method(extracted_values, extraction_method,'OCR')
             img = cv2.imdecode(np.fromfile(full_path, dtype=np.uint8), -1)
-            extracted_values = extract_dynamic_fields(img, phrases_to_extract,extracted_values)
+            extracted_values = extract_dynamic_fields(img, phrases_to_extract,extracted_values,ico_servisy)
         else:
             print('Neznamy format vstupuneho suboru')
     # rukou pisana faktura
@@ -83,7 +86,17 @@ def extract_values_from_file(full_path):
     target_values = all_target_values.get(os.path.basename(full_path),{})
     calculate_accuracy(os.path.basename(full_path),target_values,extraction_method, extracted_values,elapsed_time)
 
+
+def set_extraction_method(extracted_values, extraction_method, new_method):
+    if len(extracted_values) > 0:  # ak uz bolo nieco rozpoznane inou metodou zachovaj aj povodnu metodu
+        extraction_method = extraction_method + ' | ' + new_method
+    else:  # ak zatial nebolo nic rozpoznane, urci novu metodu
+        extraction_method = new_method
+    return extraction_method
+
+
 all_target_values = load_target_values_excel1()
+ico_servisy = load_ico_servisy()
 for i,y in enumerate(invoices_list):
     print(y)
     extract_values_from_file(path+y)
