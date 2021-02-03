@@ -55,7 +55,7 @@ def extract_values_from_file(full_path):
                 for i,page in enumerate(pdf.pages[:2]):
                     first_page =page
                     extracted_text = first_page.extract_text()
-                    if bool(extracted_text) and any(char.isdigit() for char in extracted_text):
+                    if bool(extracted_text) and any(char.isdigit() for char in extracted_text) and len(re.findall('[(cid:\d+?)]',extracted_text)) <100:
                         print('Extrahujem text z PDF')
                         extraction_method = set_extraction_method(extracted_values, extraction_method, 'PDF TEXT')
                         unaccented_upper_text = unidecode.unidecode(extracted_text.upper())

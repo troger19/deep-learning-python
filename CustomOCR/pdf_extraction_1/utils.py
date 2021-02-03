@@ -16,15 +16,15 @@ import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
-                     'UHRADE.*(?:\s)(\d+[,.]\d+)']
+                     'UHRADE.*(?:\s)(\d+[,.]\d+)', 'CELKOM.*(?:\s)(\d+[,.]\d+)']
 
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{22}|AT\d{22}'
 reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+', '\d+[.,]?\d+']
-reg_ico = ['ICO\s*?.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:']
+reg_ico = ['IC.*(27082440)', 'ICO\s*?.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:','(\d{8}).*DIC:']
 
 
 def extract_ico(unaccented_upper_text):
@@ -59,7 +59,8 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
     if extracted_values.get('iban') is None:
         iban = re.search(reg_iban, unaccented_upper_text)
         if iban:
-            extracted_values.update({'iban': iban.group()})
+            iban = re.sub('\s+', '', str(iban.group()))
+            extracted_values.update({'iban': iban})
 
     # VIN
     # vin = re.findall(reg_vin, unaccented_upper_text)
@@ -69,7 +70,6 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
             extracted_values.update({'vin': vin.replace(' ', '')})
 
     # ICO
-    # ICO = try_multiple_regex(unaccented_upper_text, reg_ico,1,True)
     if extracted_values.get('ico') is None:
         ico = extract_ico(unaccented_upper_text)
         if ico:
@@ -150,10 +150,7 @@ def load_ico_servisy():
     print(sheet.max_row)
     ico = []
     iban = []
-    iban_ico = {}
     for i, row in enumerate(sheet.rows):
-        # data[i]['ico'] = row[0].value
-        # data[i]['iban'] = row[1].value
         ico.append(row[0].value)
         iban.append(row[1].value)
     iban_ico = dict(zip(iban, ico))
@@ -232,7 +229,16 @@ def extract_spd(qrcode, extracted_values):
 def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy):
     all_text_from_all_versions = re.sub('nan', '', str(extracted_dynamic_fields['text'].values) + (
         str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
+    all_text_from_all_versions = re.sub('[^0-9a-zA-Z]+', '', all_text_from_all_versions)
     for i in dynamic_fields:
+        if i == 'iban' and dynamic_fields[i] is None:
+            iban = re.search(reg_iban, all_text_from_all_versions)
+            if iban:
+                iban = iban.group()
+                if iban.startswith('5'):
+                    iban = 'S' + iban[1:]
+                dynamic_fields.update({i: iban})
+
         if i == 'ecv' and dynamic_fields[i] is None:
             search = re.search(reg_ecv, all_text_from_all_versions)
             if search:
@@ -315,14 +321,21 @@ def find_final_value(row, template_type):
             return '-'
     elif template_type == 'iban':
         row1 = re.sub(r'[^a-zA-Z0-9]', '', row)
+        row2 = row1.replace('O', '0')
         re_search = re.search(reg_iban, str(row1))
+        re_search2 = re.search(reg_iban, str(row2))
         if re_search:
             group = re_search.group()
             if group.startswith('5'):
                 group = 'S' + group[1:]
             return group
+        elif re_search2:
+            group = re_search2.group()
+            if group.startswith('5'):
+                group = 'S' + group[1:]
+            return group
         else:
-            return '-'
+            return None
     elif template_type == 'vin':
         replace = re.sub('\s+', '', str(row)).replace('\n', '').strip()
         search = try_multiple_regex(replace, reg_vin)
@@ -339,8 +352,6 @@ def find_final_value(row, template_type):
             return '-'
     elif template_type == 'ico':
         return extract_ico(row)
-        # search = try_multiple_regex(row, reg_ico,1,True)
-        # return ICO
 
 
 
@@ -358,7 +369,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
             break
         if len(top_values) > 1:
             print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO co robit v takomto pripade
-            break
+            return
             # return None
     rows = {}
     # loop through all TOP coordinates of the 1. word
