@@ -17,15 +17,26 @@ import openpyxl
 amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
                      'UHRADE.*(?:\s)(\d+[,.]\d+)', 'CELKOM.*(?:\s)(\d+[,.]\d+)']
-
+reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{22}|AT\d{22}'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{20}'
 reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+', '\d+[.,]?\d+']
-reg_ico = ['IC.*(27082440)', 'ICO\s*?.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:','(\d{8}).*DIC:']
+reg_ico = ['IC.*(27082440)', 'ICO\s*?\.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:','(\d{8}).*DIC:']
 
+
+
+def safe_cast(val, to_type, default=None):
+    try:
+        return to_type(val)
+    except (ValueError, TypeError):
+        return default
+
+def safe_cast_cena(val):
+    val=val.replace(',','.')
+    return safe_cast(val, float, 0)
 
 def extract_ico(unaccented_upper_text):
     for i in reg_ico:
@@ -57,6 +68,7 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
 
     # IBAN
     if extracted_values.get('iban') is None:
+        unaccented_upper_text = re.sub('[^0-9a-zA-Z]+', '', unaccented_upper_text)
         iban = re.search(reg_iban, unaccented_upper_text)
         if iban:
             iban = re.sub('\s+', '', str(iban.group()))
@@ -187,6 +199,8 @@ def extract_qr_code(full_path, extraction_method):
         img = convert_from_path(full_path)
         for pageNumber, page in enumerate(img):
             qr = decode(page)
+            if qr:
+                break
     else:
         print('Zadany format dokumentu nie je podporovany')
 
@@ -229,8 +243,16 @@ def extract_spd(qrcode, extracted_values):
 def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy):
     all_text_from_all_versions = re.sub('nan', '', str(extracted_dynamic_fields['text'].values) + (
         str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
-    all_text_from_all_versions = re.sub('[^0-9a-zA-Z]+', '', all_text_from_all_versions)
+    all_text_from_all_versions = re.sub('[^0-9a-zA-Z,.]+', '', all_text_from_all_versions)
     for i in dynamic_fields:
+        if i == 'cena_s_dph' and dynamic_fields[i] is None:
+            amount_str = try_multiple_regex(all_text_from_all_versions, [reg_dummy_cena], 1, True)
+            if amount_str:
+                m = re.search('\d', amount_str)
+                if m:
+                    amount_str = amount_str[m.start():]
+                    amount = re_replace(amount_str).replace('.', ',')
+                    dynamic_fields.update({'cena_s_dph': amount})
         if i == 'iban' and dynamic_fields[i] is None:
             iban = re.search(reg_iban, all_text_from_all_versions)
             if iban:
@@ -285,11 +307,17 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
     # add as key:value pair
     for i, (key, value) in enumerate(phrases.items()):
         if dynamic_fields.get(key) is None:
-            target_word = check_and_extract(key, value, extracted_dynamic_fields)
-            if not target_word:
-                target_word = check_and_extract(key, value, extracted_dynamic_fields1)
-            if not target_word:
-                target_word = check_and_extract(key, value, extracted_dynamic_fields2)
+            if key == 'cena_s_dph':
+                cena1 = check_and_extract(key, value, extracted_dynamic_fields)
+                cena2 = check_and_extract(key, value, extracted_dynamic_fields1)
+                cena3 = check_and_extract(key, value, extracted_dynamic_fields2)
+                target_word = max(safe_cast_cena(cena1), safe_cast_cena(cena2),safe_cast_cena(cena3))
+            else:
+                target_word = check_and_extract(key, value, extracted_dynamic_fields)
+                if not target_word:
+                    target_word = check_and_extract(key, value, extracted_dynamic_fields1)
+                if not target_word:
+                    target_word = check_and_extract(key, value, extracted_dynamic_fields2)
 
             # if target_word is not None:
             dynamic_fields.update({key: target_word})
@@ -349,7 +377,7 @@ def find_final_value(row, template_type):
         if search:
             return search.group()
         else:
-            return '-'
+            return None
     elif template_type == 'ico':
         return extract_ico(row)
 
@@ -359,43 +387,50 @@ def find_final_value(row, template_type):
 def extract_correct_row(extracted_dynamic_fields, phrase):
     phrase_split = phrase.split()  # split search phrase into words
     text_split = []
+    rows = []
     for i in phrase_split:
         text_split.append(i)
         text_split.append(i + ':')
     extracted_dynamic_fields['text'] = extracted_dynamic_fields['text'].str.upper()
     for word in text_split:
-        top_values = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['top'].values
-        if len(top_values) == 1:
-            break
-        if len(top_values) > 1:
-            print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO co robit v takomto pripade
-            return
-            # return None
-    rows = {}
-    # loop through all TOP coordinates of the 1. word
-    for top in top_values:
-        # create the range of TOP pixels for 1. word, because words in row can be upper or lower case and therefore the distance from the TOP is changing slightly <top-1, top +5>  because usualy the 1. word is Upper case
-        pixels_from_top_range = np.arange(top - 8, top + 100, ).tolist()
-        # all words that were found +- around same distance from Top of the page
-        row_text = extracted_dynamic_fields[extracted_dynamic_fields['top'].isin(pixels_from_top_range)]['text'].values
-        # after_text = extracted_dynamic_fields[extracted_dynamic_fields['left'].isin( np.arange(left_values,left_values+ 400, ).tolist())]['text'].values
+        # line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
+        block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
+        if 'SUMA' in phrase_split and block_num.size>0:
+            left = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['left'].values
+            value = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
+            res = {left[i]: value[i] for i in range(len(left))}
+            new_values=[]
+            keyList = list(res.keys())
+            for i, v in enumerate(keyList):
+                if i<len(keyList)-1:
+                    next_key = keyList[i + 1]
+                    if int(next_key) - int(v) <20:
+                        new_values.append(str(res[v]) + str(res[next_key]))
+                    else:
+                        new_values.append(res[v])
+                else:
+                    new_values.append(res[v])
+            hodnoty = re.findall("\d+[,.]\d+", str(new_values))
+            h = []
+            for i in hodnoty:
+                i = i.replace(',', '.')
+                h.append(float(i))
+            if h:
+                rows.append(max(h))
+        else:
+            if len(block_num) == 1:
+                break
+            if len(block_num) > 1:
+                print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO co robit v takomto pripade
+                return
+    if rows:
+        return max(rows)
+    row_text = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
         # clean the row by replacing non values and spaces
-        clear_row_text = str(row_text).replace('nan', '').replace(' ', '')
-        clear_row_text = unidecode.unidecode(clear_row_text.upper())
-        # if there is a word, then put it into the dictionary
-        if len(row_text) != 0:
-            rows.update({top: clear_row_text})
-    # while 1 word can be found in multiple row on a page, we need to find the correct row by comparing the occurence of the phrase from template with the extracted row. If all words from template exists in the extracted row, then thats the correct row.
-    for row in rows:
-        # split each row into arrays so we can easily compares the subarrays
-        # correct_row = rows[row].replace('\'', ' ').split()
-        correct_row = rows[row].replace('\'', ' ')
-        # checks if ALL words from template exists in row. If some word is missing then the not the correct row or the extraction failed.
-        # is_all_words_found = all(item in correct_row for item in phrase['text'].split())
-        # if is_all_words_found:
-        if True:
-            # if all words matched then its correct row
-            return correct_row
+    clear_row_text = str(row_text).replace('nan', '').replace(' ', '')
+    clear_row_text = unidecode.unidecode(clear_row_text.upper())
+    correct_row = clear_row_text.replace('\'', ' ')
+    return correct_row
 
 
 # metoda na vyskusanie hladania pre pole regexpov.. pozor, poradie je dolezite, ak sa slovo najde loop konci, preto treba zadavat regexy od najvaic specifickej k najmenej specifickej
