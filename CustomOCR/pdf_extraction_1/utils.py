@@ -15,11 +15,11 @@ import xlrd
 import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
-reg_total_amount2 = ['UHRADE(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
-                     'UHRADE.*(?:\s)(\d+[,.]\d+)', 'CELKOM.*(?:\s)(\d+[,.]\d+)']
+reg_total_amount2 = ['UHRADE|UHRADU(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
+                     'UHRADE|UHRADU.*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
 reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{20}'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{18}'
 reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
@@ -58,6 +58,8 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
             if m:
                 amount_str = amount_str[m.start():]
                 amount = re_replace(amount_str)
+                if len(amount) > 4 and ',' in amount and '.' in amount:
+                    amount = amount.replace('.', '')
                 extracted_values.update({'cena_s_dph': amount})
 
     # ECV
@@ -312,6 +314,7 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
                 cena2 = check_and_extract(key, value, extracted_dynamic_fields1)
                 cena3 = check_and_extract(key, value, extracted_dynamic_fields2)
                 target_word = max(safe_cast_cena(cena1), safe_cast_cena(cena2),safe_cast_cena(cena3))
+                target_word=None if target_word==0 else str(target_word).replace('.',',')
             else:
                 target_word = check_and_extract(key, value, extracted_dynamic_fields)
                 if not target_word:
@@ -393,38 +396,68 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
         text_split.append(i + ':')
     extracted_dynamic_fields['text'] = extracted_dynamic_fields['text'].str.upper()
     for word in text_split:
-        # line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
+    #     # line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
+    #     block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
+    #     if 'SUMA' in phrase_split and block_num.size>0:
+    #         left = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['left'].values
+    #         value = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
+    #         res = {left[i]: value[i] for i in range(len(left))}
+    #         new_values=[]
+    #         keyList = list(res.keys())
+    #         for i, v in enumerate(keyList):
+    #             if i<len(keyList)-1:
+    #                 next_key = keyList[i + 1]
+    #                 if int(next_key) - int(v) <43:
+    #                     new_values.append(str(res[v]) + str(res[next_key]))
+    #                 else:
+    #                     new_values.append(res[v])
+    #             else:
+    #                 new_values.append(res[v])
+    #         hodnoty = re.findall("\d+[,.]\d+[,]?\d{2}?", str(new_values))
+    #         h = []
+    #         for i in hodnoty:
+    #             i = i.replace(',', '.')
+    #             if i.count('.') > 1:
+    #                 i = i.replace('.', '', 1)
+    #             h.append(float(i))
+    #         if h:
+    #             rows.append(max(h))
+    #     else:
+    #         if len(block_num) == 1:
+    #             break
+    #         if len(block_num) > 1:
+    #             print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO ulozit vsetky hodnoty a skusit potom pre IBAN a ICO vycitat spravnu
+    #             return
+    #     if rows:
+    #         return max(rows)
+
         block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
-        if 'SUMA' in phrase_split and block_num.size>0:
-            left = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['left'].values
-            value = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
-            res = {left[i]: value[i] for i in range(len(left))}
-            new_values=[]
-            keyList = list(res.keys())
-            for i, v in enumerate(keyList):
-                if i<len(keyList)-1:
-                    next_key = keyList[i + 1]
-                    if int(next_key) - int(v) <20:
-                        new_values.append(str(res[v]) + str(res[next_key]))
-                    else:
-                        new_values.append(res[v])
-                else:
-                    new_values.append(res[v])
-            hodnoty = re.findall("\d+[,.]\d+", str(new_values))
-            h = []
-            for i in hodnoty:
-                i = i.replace(',', '.')
-                h.append(float(i))
-            if h:
-                rows.append(max(h))
-        else:
-            if len(block_num) == 1:
-                break
-            if len(block_num) > 1:
-                print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO co robit v takomto pripade
-                return
-    if rows:
-        return max(rows)
+        line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
+        # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['line_num'].values)
+        # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['text'].values)
+        if block_num.size>0 and line_num.size>0:
+            search_text = extracted_dynamic_fields[
+                  (extracted_dynamic_fields['block_num'].isin([block_num[-1]])) & (extracted_dynamic_fields['line_num'].isin([line_num[-1]])) & (
+                              extracted_dynamic_fields['word_num'] != 0)]['text'].values
+            if 'SUMA' in phrase_split:
+                h = []
+                for text in search_text:
+                    h.append(safe_cast_cena(text))
+                #
+                # hodnoty = re.findall("\d+[,.]\d+[,]?\d{2}?", str(search_text))
+                # for i in hodnoty:
+                #     i = i.replace(',', '.')
+                #     if i.count('.') > 1:
+                #         i = i.replace('.', '', 1)
+                #         h.append(float(i))
+                if h:
+                    rows.append(max(h))
+            # print(search_text)
+        if rows:
+            return max(rows)
+
+
+
     row_text = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
         # clean the row by replacing non values and spaces
     clear_row_text = str(row_text).replace('nan', '').replace(' ', '')

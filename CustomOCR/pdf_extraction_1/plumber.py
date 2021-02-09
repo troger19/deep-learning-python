@@ -31,8 +31,8 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
-phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE CELKOM', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV','vin': 'VIN'}
-
+phrases_to_extract = {'cena_s_dph': 'SUMA ÚHRADE UHRADE CELKOM ÚHRADÉ', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV SPZ ŠPZ','vin': 'VIN'}
+myList = ['DODAVATEL', 'IBAN','FAKTURA']
 
 def are_all_values_extracted(extracted_values):
     if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None  and extracted_values.get('ecv') is not None):
@@ -52,10 +52,11 @@ def extract_values_from_file(full_path):
         if extension =='.pdf':
         # faktura
             with pdfplumber.open(full_path) as pdf:
-                for i,page in enumerate(pdf.pages[:2]):
+                for i,page in enumerate(pdf.pages[:3]):
                     first_page =page
                     extracted_text = first_page.extract_text()
-                    if bool(extracted_text) and any(char.isdigit() for char in extracted_text) and len(re.findall('(cid:\d+?)',extracted_text)) <100:
+                    if bool(extracted_text) and any(char.isdigit() for char in extracted_text) and len(re.findall('(cid:\d+?)',extracted_text)) <100 and all(x in extracted_text for x in myList):
+                    # if False:
                         print('Extrahujem text z PDF')
                         extraction_method = set_extraction_method(extracted_values, extraction_method, 'PDF TEXT')
                         unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
