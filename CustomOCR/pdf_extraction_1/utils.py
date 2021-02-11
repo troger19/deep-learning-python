@@ -5,6 +5,7 @@ import unidecode
 from pyzbar.pyzbar import decode
 from pdf2image import convert_from_path
 import cv2
+
 from CustomOCR.pdf_extraction_1.utils import *
 import requests
 from os.path import splitext
@@ -15,11 +16,12 @@ import xlrd
 import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
-reg_total_amount2 = ['UHRADE|UHRADU(.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
-                     'UHRADE|UHRADU.*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
+reg_total_amount2 = ['UHRADE.*(?:\s)((\d+\s)\d+[,.]\d+)', 'UHRAD[EU](.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
+                     'UHRAD[EU].*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
 reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{18}'
+reg_ecv_dummy = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))-([0-9]{3})([A-Z]{2})'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{18}|SK[0-9OS]{22}'
 reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
@@ -35,7 +37,21 @@ def safe_cast(val, to_type, default=None):
         return default
 
 def safe_cast_cena(val):
-    val=val.replace(',','.')
+    if val is None:
+        return 0
+    val = re.sub(r'[^0-9.,]+', '', val)
+    val = val.strip('.,')
+    if '.' in val and ',' in val:
+        bodka_index = val.find('.')
+        ciarka_index = val.find(',')
+        if bodka_index < ciarka_index:
+            val = str(val).replace('.', '')
+            val = str(val).replace(',', '.')
+        else:
+            val = str(val).replace(',', '')
+    elif ',' in val:
+        val = str(val).replace(',', '.')
+
     return safe_cast(val, float, 0)
 
 def extract_ico(unaccented_upper_text):
@@ -44,11 +60,20 @@ def extract_ico(unaccented_upper_text):
         count_ico = len(final_extraction)
         if count_ico == 1:
             ICO = final_extraction[0].replace(' ', '').replace(':', '')
+        elif count_ico == 2:
+            if int(final_extraction[0].replace(' ', '')) in ico_servisy.values():
+                ICO = final_extraction[0]
+            elif int(final_extraction[1].replace(' ', '')) in ico_servisy.values():
+                ICO = final_extraction[1]
+            else:
+                continue
         else:
             continue
         return ICO
 
-def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
+def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy_p):
+    global ico_servisy
+    ico_servisy = ico_servisy_p
     extracted_values = extracted_values
     # SUMA
     if extracted_values.get('cena_s_dph') is None:
@@ -60,6 +85,8 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy):
                 amount = re_replace(amount_str)
                 if len(amount) > 4 and ',' in amount and '.' in amount:
                     amount = amount.replace('.', '')
+                if '.' in amount:
+                    amount = amount.replace('.', ',')
                 extracted_values.update({'cena_s_dph': amount})
 
     # ECV
@@ -111,8 +138,8 @@ def load_target_values(filename):
             return {}
 
 
-def load_target_values_excel1():
-    ps = openpyxl.load_workbook('validation\\Faktury-template.xlsx')
+def load_target_values_excel(target_values):
+    ps = openpyxl.load_workbook('%s' % target_values)
     sheet = ps['Sheet1']
     print(sheet.max_row)
     total_info = {}
@@ -158,18 +185,7 @@ def load_target_values_excel1():
     return total_info
 
 
-def load_ico_servisy():
-    ps = openpyxl.load_workbook('validation\\ico_servisy.xlsx')
-    sheet = ps['ico']
-    print(sheet.max_row)
-    ico = []
-    iban = []
-    for i, row in enumerate(sheet.rows):
-        ico.append(row[0].value)
-        iban.append(row[1].value)
-    iban_ico = dict(zip(iban, ico))
 
-    return iban_ico
 
 
 def calculate_accuracy(filename, target_values, extraction_method, extracted_values, elapsed_time):
@@ -239,13 +255,16 @@ def extract_spd(qrcode, extracted_values):
     for s in split[2:-1]:
         s_split = s.split(':')
         spd.update({s_split[0]: s_split[1]})
-    extracted_values.update({'cena_s_dph': spd['AM']})
+    cena_s_dph = spd['AM']
+    if '.' in cena_s_dph:
+        cena_s_dph = str(cena_s_dph).replace('.',',')
+    extracted_values.update({'cena_s_dph': cena_s_dph})
 
 
-def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy):
+def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy, filename):
     all_text_from_all_versions = re.sub('nan', '', str(extracted_dynamic_fields['text'].values) + (
         str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
-    all_text_from_all_versions = re.sub('[^0-9a-zA-Z,.]+', '', all_text_from_all_versions)
+    all_text_from_all_versions = re.sub('[^0-9a-zA-Z,.-]+', '', all_text_from_all_versions)
     for i in dynamic_fields:
         if i == 'cena_s_dph' and dynamic_fields[i] is None:
             amount_str = try_multiple_regex(all_text_from_all_versions, [reg_dummy_cena], 1, True)
@@ -259,14 +278,20 @@ def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynami
             iban = re.search(reg_iban, all_text_from_all_versions)
             if iban:
                 iban = iban.group()
+                iban = iban.replace('O','0')
                 if iban.startswith('5'):
                     iban = 'S' + iban[1:]
                 dynamic_fields.update({i: iban})
 
         if i == 'ecv' and dynamic_fields[i] is None:
-            search = re.search(reg_ecv, all_text_from_all_versions)
-            if search:
-                dynamic_fields.update({i: search.group()})
+            ecv_in_filename = re.search(reg_ecv, filename)
+            if ecv_in_filename:
+                dynamic_fields.update({i: ecv_in_filename.group()})
+            else:
+                ecv_in_text = re.search(reg_ecv_dummy, all_text_from_all_versions)
+                if ecv_in_text:
+                    dynamic_fields.update({i: ecv_in_text.group()})
+
         if i == 'vin' and dynamic_fields[i] is None:
             replace = all_text_from_all_versions.replace(' ', '').replace('\n', '').strip()
             search = try_multiple_regex(replace, reg_vin)
@@ -281,7 +306,9 @@ def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynami
 
 
 # dynamicke vytahovanie hodnot podla regex
-def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
+def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, filename):
+    global ico_servisy
+    ico_servisy = ico_servisy_p
     dynamic_fields = extracted_values
     if (len(image.shape) > 2):
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -298,11 +325,11 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
     # extract fields
     # gfg = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields = pytesseract.image_to_data(image, lang='SLK', output_type='data.frame')
-    extracted_dynamic_fields_temp = pytesseract.image_to_data(image, lang='SLK')
+    # extracted_dynamic_fields_temp = pytesseract.image_to_data(image, lang='SLK')
     extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
-    extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
+    # extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
-    extracted_dynamic_fields_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
+    # extracted_dynamic_fields_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
     # print(extracted_dynamic_fields_temp)
     # print(extracted_dynamic_fields_temp1)
     # print(extracted_dynamic_fields_temp2)
@@ -327,7 +354,7 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy):
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
     dynamic_fields = do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1,
-                                       extracted_dynamic_fields2,ico_servisy)
+                                       extracted_dynamic_fields2,ico_servisy,filename)
     # return JSON like object with phrase name and extracted values (amounts in EUR, etc..)  -> sum_total:20,26
     return dynamic_fields
 
@@ -352,16 +379,10 @@ def find_final_value(row, template_type):
             return '-'
     elif template_type == 'iban':
         row1 = re.sub(r'[^a-zA-Z0-9]', '', row)
-        row2 = row1.replace('O', '0')
+        row1 = row1.replace('O', '0')
         re_search = re.search(reg_iban, str(row1))
-        re_search2 = re.search(reg_iban, str(row2))
         if re_search:
             group = re_search.group()
-            if group.startswith('5'):
-                group = 'S' + group[1:]
-            return group
-        elif re_search2:
-            group = re_search2.group()
             if group.startswith('5'):
                 group = 'S' + group[1:]
             return group
@@ -391,6 +412,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     phrase_split = phrase.split()  # split search phrase into words
     text_split = []
     rows = []
+    row_text=''
     for i in phrase_split:
         text_split.append(i)
         text_split.append(i + ':')
@@ -433,36 +455,81 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
 
         block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
         line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
+        par_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['par_num'].values
+        word_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['word_num'].values
+        biggest_word_index=-1
+
+
         # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['line_num'].values)
         # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['text'].values)
         if block_num.size>0 and line_num.size>0:
-            search_text = extracted_dynamic_fields[
-                  (extracted_dynamic_fields['block_num'].isin([block_num[-1]])) & (extracted_dynamic_fields['line_num'].isin([line_num[-1]])) & (
-                              extracted_dynamic_fields['word_num'] != 0)]['text'].values
+            words_in_line = sum(list(extracted_dynamic_fields[extracted_dynamic_fields['block_num'] == block_num[-1]]['line_num'] == line_num[biggest_word_index]))
+            height = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['height'].values
+            width = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['width'].values
+            if (height.argmax() == width.argmax()):
+                biggest_word_index = height.argmax()
+
             if 'SUMA' in phrase_split:
+
+
+                search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                             ]['text'].values
+                # search_text = [x for x in search_text if str(x) != 'nan']
+                left = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                      & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                    ]['left'].values
+                res = {left[i]: search_text[i] for i in range(len(left))}
+                new_values=[]
+                keyList = list(res.keys())
+                for i, v in enumerate(keyList):
+                    if i<len(keyList)-1:
+                        next_key = keyList[i + 1]
+                        if int(next_key) - int(v) <72 and (len(str(res[v])) == 1  and str(res[v]).isdigit()):
+                            new_values.append(str(res[v]) + str(res[next_key]))
+                        else:
+                            new_values.append(res[v])
+                    else:
+                        new_values.append(res[v])
+
                 h = []
-                for text in search_text:
+                for text in new_values:
                     h.append(safe_cast_cena(text))
-                #
-                # hodnoty = re.findall("\d+[,.]\d+[,]?\d{2}?", str(search_text))
-                # for i in hodnoty:
-                #     i = i.replace(',', '.')
-                #     if i.count('.') > 1:
-                #         i = i.replace('.', '', 1)
-                #         h.append(float(i))
                 if h:
                     rows.append(max(h))
-            # print(search_text)
-        if rows:
-            return max(rows)
+                # print(search_text)
+                if len(rows)>0 and not (len(rows)==1 and rows[0]==0):
+                    return max(rows)
+            if 'ICO' in phrase_split:
+                search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_num))
+                            & (extracted_dynamic_fields['line_num'].isin(line_num))
+                            & (extracted_dynamic_fields['par_num'].isin(par_num))
+                                                       ]['text'].values
+                if len(search_text)>0:
+                    row_text= search_text
+                    break
+            if 'IBAN' in phrase_split or 'ECV' in phrase_split:
+                search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_num))
+                                                    & (extracted_dynamic_fields['line_num'].isin(line_num))
+                                                    & (extracted_dynamic_fields['par_num'].isin(par_num))
+                                                    & (extracted_dynamic_fields['word_num'].isin(
+                    range(word_num[0], words_in_line)))
+                                                    ]['text'].values
+                if len(search_text) > 0:
+                    row_text = row_text.join(search_text)
+                    break
 
 
 
-    row_text = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
+    # row_text = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
         # clean the row by replacing non values and spaces
-    clear_row_text = str(row_text).replace('nan', '').replace(' ', '')
+    clear_row_text = str(row_text).replace('nan', '')
     clear_row_text = unidecode.unidecode(clear_row_text.upper())
-    correct_row = clear_row_text.replace('\'', ' ')
+    correct_row = re.sub('[^0-9a-zA-Z,.: ]+', '', clear_row_text)
     return correct_row
 
 
@@ -505,3 +572,17 @@ def save_to_csv(filename, extraction_method, target_values, extracted_values, el
                 writer.writerow(data)
     except IOError:
         print("I/O error")
+
+
+def load_ico_servisy():
+    ps = openpyxl.load_workbook('validation\\ico_servisy.xlsx')
+    sheet = ps['ico']
+    print(sheet.max_row)
+    ico = []
+    iban = []
+    for i, row in enumerate(sheet.rows):
+        ico.append(row[0].value)
+        iban.append(row[1].value)
+    iban_ico = dict(zip(iban, ico))
+
+    return iban_ico
