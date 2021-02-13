@@ -21,7 +21,7 @@ reg_total_amount2 = ['UHRADE.*(?:\s)((\d+\s)\d+[,.]\d+)', 'UHRAD[EU](.*)(e|eur|E
 reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
 reg_ecv_dummy = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))-([0-9]{3})([A-Z]{2})'
-reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{18}|SK[0-9OS]{22}'
+reg_iban = '[5S]K\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}|SK\d{22}|CZ\d{22}|DE\d{20}|AT\d{18}|SK[0-9OS]{22}|SE\d{2}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}\s*?\d{4}'
 reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
@@ -210,14 +210,14 @@ def extract_qr_code(full_path, extraction_method):
     extracted_values = {}
     extension = splitext(full_path)[1]
     qr = None
-    if extension in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
+    if extension.lower() in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
         img = cv2.imdecode(np.fromfile(full_path, dtype=np.uint8), -1)
         qr = decode(img)
-    elif extension == '.pdf':
+    elif extension.lower() == '.pdf':
         img = convert_from_path(full_path)
         for pageNumber, page in enumerate(img):
             qr = decode(page)
-            if qr:
+            if qr and qr[0][1] == 'QRCODE':
                 break
     else:
         print('Zadany format dokumentu nie je podporovany')
@@ -305,6 +305,9 @@ def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynami
     return dynamic_fields
 
 
+def safe_elem(array,position):
+    return None if array is None else array[position]
+
 # dynamicke vytahovanie hodnot podla regex
 def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, filename):
     global ico_servisy
@@ -319,8 +322,14 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
 
     threshold_img = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY)[1]
     threshold_img1 = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    dst = cv2.resize(threshold_img, (int(width / 3), int(height / 3)))
-    # cv2.imshow('threshold_img ',dst)
+    image_resize = cv2.resize(image, (int(width / 2), int(height / 2)))
+    threshold_img_resize = cv2.resize(threshold_img, (int(width / 2), int(height / 2)))
+    threshold_img1_resize = cv2.resize(threshold_img1, (int(width / 2), int(height / 2)))
+    # cv2.imshow('image ',image_resize)
+    # cv2.waitKey(0)
+    # cv2.imshow('threshold_img ', threshold_img_resize)
+    # cv2.waitKey(0)
+    # cv2.imshow('threshold_img1 ', threshold_img1_resize)
     # cv2.waitKey(0)
     # extract fields
     # gfg = pytesseract.image_to_data(threshold_img, lang='SLK')
@@ -340,8 +349,16 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                 cena1 = check_and_extract(key, value, extracted_dynamic_fields)
                 cena2 = check_and_extract(key, value, extracted_dynamic_fields1)
                 cena3 = check_and_extract(key, value, extracted_dynamic_fields2)
-                target_word = max(safe_cast_cena(cena1), safe_cast_cena(cena2),safe_cast_cena(cena3))
-                target_word=None if target_word==0 else str(target_word).replace('.',',')
+                # target_word = max(safe_cast_cena(cena1), safe_cast_cena(cena2),safe_cast_cena(cena3))
+                vysl = [safe_cast_cena(safe_elem(cena1,0)), safe_cast_cena(safe_elem(cena2,0)), #TODO jano neviem co
+                        safe_cast_cena(safe_elem(cena3,0))]
+                conf = [safe_elem(cena1,1), safe_elem(cena2,1), safe_elem(cena3,1)]
+                spolu = dict(zip(vysl, conf))
+                max_cena = max(spolu.keys(), key=(lambda k: spolu[k] is not None))
+                max_cena_conf = max(spolu.values(), key=(lambda k:k is not None))
+                # target_word=None if target_word==0 else str(target_word).replace('.',',')
+                target_word=None if max_cena==0 else [str(max_cena).replace('.',',')]
+                dynamic_fields.update({'cena_s_dph_conf': max_cena_conf})
             else:
                 target_word = check_and_extract(key, value, extracted_dynamic_fields)
                 if not target_word:
@@ -350,7 +367,7 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                     target_word = check_and_extract(key, value, extracted_dynamic_fields2)
 
             # if target_word is not None:
-            dynamic_fields.update({key: target_word})
+            dynamic_fields.update({key: None if target_word is None else target_word[0]})
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
     dynamic_fields = do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1,
@@ -362,11 +379,11 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
 # extrahovanie textu cez Tesseract podla klucovych slov. Extrahovanie konkretneho riadku a vyparsovanie cielovej hodnoty
 def check_and_extract(key, phrase, extracted_dynamic_fields):
     if not extracted_dynamic_fields['text'].isnull().values.all():
-        correct_row = extract_correct_row(extracted_dynamic_fields, phrase)
+        correct_row,conf = extract_correct_row(extracted_dynamic_fields, phrase)
         if correct_row:  # find final value in a row through regexp
-            return find_final_value(str(correct_row), key)
+            return find_final_value(str(correct_row), key),conf
     else:
-        return '-'
+        return '-',0
 
 
 # hladanie konkretnej hodnoty podla zadefinovaneho typu. Vstupom je cely riadkok extrahovaneho textu, v ktorom by sa mala nachadzat hladana hodnota
@@ -413,6 +430,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     text_split = []
     rows = []
     row_text=''
+    conf_index = 0
     for i in phrase_split:
         text_split.append(i)
         text_split.append(i + ':')
@@ -459,7 +477,6 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
         word_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['word_num'].values
         biggest_word_index=-1
 
-
         # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['line_num'].values)
         # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['text'].values)
         if block_num.size>0 and line_num.size>0:
@@ -468,9 +485,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
             width = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['width'].values
             if (height.argmax() == width.argmax()):
                 biggest_word_index = height.argmax()
-
             if 'SUMA' in phrase_split:
-
 
                 search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
                       & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
@@ -483,6 +498,13 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                       & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
                       & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
                     ]['left'].values
+
+                confidences = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
+                                         & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                                         & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                                         & (extracted_dynamic_fields['word_num'].isin(
+                    range(word_num[0], words_in_line)))
+                                         ]['conf'].values
                 res = {left[i]: search_text[i] for i in range(len(left))}
                 new_values=[]
                 keyList = list(res.keys())
@@ -501,9 +523,10 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                     h.append(safe_cast_cena(text))
                 if h:
                     rows.append(max(h))
+                    conf_index = np.argmax(h)
                 # print(search_text)
                 if len(rows)>0 and not (len(rows)==1 and rows[0]==0):
-                    return max(rows)
+                    return max(rows), confidences[conf_index]
             if 'ICO' in phrase_split:
                 search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_num))
                             & (extracted_dynamic_fields['line_num'].isin(line_num))
@@ -530,7 +553,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     clear_row_text = str(row_text).replace('nan', '')
     clear_row_text = unidecode.unidecode(clear_row_text.upper())
     correct_row = re.sub('[^0-9a-zA-Z,.: ]+', '', clear_row_text)
-    return correct_row
+    return correct_row,conf_index
 
 
 # metoda na vyskusanie hladania pre pole regexpov.. pozor, poradie je dolezite, ak sa slovo najde loop konci, preto treba zadavat regexy od najvaic specifickej k najmenej specifickej
@@ -553,13 +576,14 @@ def try_multiple_regex(row, regexp, group=None, is_number=False):
 # ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
     csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'cena_s_dph_target',
-                   'cena_s_dph_extracted', 'iban_target', 'iban_extracted',
+                   'cena_s_dph_extracted', 'cena_s_dph_conf','iban_target', 'iban_extracted',
                    'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
          'ico_target': target_values.get('ico', ' -'), 'ico_extracted': extracted_values.get('ico', ' -'),
          'cena_s_dph_target': target_values.get('cena_s_dph', ' -'),
          'cena_s_dph_extracted': extracted_values.get('cena_s_dph', ' -'),
+         'cena_s_dph_conf': extracted_values.get('cena_s_dph_conf', ' -'),
          'iban_target': target_values.get('iban', ' -'), 'iban_extracted': extracted_values.get('iban', ' -'),
          'ecv_target': target_values.get('ecv', ' -'), 'ecv_extracted': extracted_values.get('ecv', ' -'),
          'vin_target': target_values.get('vin', ' -'), 'vin_extracted': extracted_values.get('vin', ' -'),

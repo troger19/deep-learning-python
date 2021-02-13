@@ -57,26 +57,30 @@ def extract_values_from_file(full_path):
 
     extension = splitext(full_path)[1]
     if not are_all_values_extracted(extracted_values):
-        if extension =='.pdf':
+        if extension.lower() =='.pdf':
         # faktura
-            with pdfplumber.open(full_path) as pdf:
-                for i,page in enumerate(pdf.pages[:2]):
-                    first_page =page
-                    extracted_text = first_page.extract_text()
-                    if bool(extracted_text) and any(char.isdigit() for char in extracted_text) and len(re.findall('(cid:\d+?)',extracted_text)) <100 and any(x in extracted_text.upper() for x in myList):
-                    # if False:
-                        print('Extrahujem text z PDF')
-                        extraction_method = set_extraction_method(extracted_values, extraction_method, 'PDF TEXT')
-                        unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
-                        # print(unaccented_upper_text)
-                        extracted_values = extract_pdf_text(unaccented_upper_text,extracted_values,ico_servisy)
-                        if not are_all_values_extracted(extracted_values):
+            try:
+                with pdfplumber.open(full_path) as pdf:
+                    for i,page in enumerate(pdf.pages[:2]):
+                        first_page =page
+                        extracted_text = first_page.extract_text()
+                        if bool(extracted_text) and any(char.isdigit() for char in extracted_text) and len(re.findall('(cid:\d+?)',extracted_text)) <100 and any(x in extracted_text.upper() for x in myList):
+                        # if False:
+                            print('Extrahujem text z PDF')
+                            extraction_method = set_extraction_method(extracted_values, extraction_method, 'PDF TEXT')
+                            unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
+                            # print(unaccented_upper_text)
+                            extracted_values = extract_pdf_text(unaccented_upper_text,extracted_values,ico_servisy)
+                            if not are_all_values_extracted(extracted_values):
+                                extracted_values, extraction_method = ocr_extraction(extracted_values, extraction_method, full_path, i, img_pdf)
+                        else:
                             extracted_values, extraction_method = ocr_extraction(extracted_values, extraction_method, full_path, i, img_pdf)
-                    else:
-                        extracted_values, extraction_method = ocr_extraction(extracted_values, extraction_method, full_path, i, img_pdf)
-                    if are_all_values_extracted(extracted_values):
-                        break
-        elif extension in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
+                        if are_all_values_extracted(extracted_values):
+                            break
+            except:
+                print('Nastal problem pri spracovani PDF' + full_path)
+                extraction_method = 'ERROR'
+        elif extension.lower() in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
             extraction_method = set_extraction_method(extracted_values, extraction_method,'OCR')
             img = cv2.imdecode(np.fromfile(full_path, dtype=np.uint8), -1)
             extracted_values = extract_dynamic_fields(img, phrases_to_extract,extracted_values,ico_servisy,os.path.basename(full_path))
