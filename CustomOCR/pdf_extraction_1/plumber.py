@@ -43,8 +43,18 @@ def are_all_values_extracted(extracted_values):
         ico_extracted = extracted_values.get('ico')
         if ico_extracted !=ico_from_iban and ico_from_iban is not None:
             extracted_values.update({'ico': ico_from_iban})
-    if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None  and extracted_values.get('ecv') is not None):
-        return True
+    if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None
+            and extracted_values.get('ecv') is not None):
+        if 'HRAD' in extracted_values.get('cena_s_dph_word'):
+            hodnoty = extracted_values.get('cena_s_dph_word').split(';')
+            for h in hodnoty:
+                if 'HRAD' in h:
+                    cena_uhrady = h.split(':')
+                    extracted_values.update({'cena_s_dph':cena_uhrady[2] })
+                    break
+            return True
+        else:
+            return False
     else:
         return False
 

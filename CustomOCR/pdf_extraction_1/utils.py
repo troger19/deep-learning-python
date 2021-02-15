@@ -39,7 +39,7 @@ def safe_cast(val, to_type, default=None):
 def safe_cast_cena(val):
     if val is None:
         return 0
-    val = re.sub(r'[^0-9.,]+', '', val)
+    val = re.sub(r'[^0-9.,]+', '', str(val))
     val = val.strip('.,')
     if '.' in val and ',' in val:
         bodka_index = val.find('.')
@@ -320,7 +320,7 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
     height, width = image.shape[:2]
     # converting image into gray scale image
 
-    threshold_img = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY)[1]
+    threshold_img = cv2.threshold(gray_image, 200, 255, cv2.THRESH_BINARY)[1]
     threshold_img1 = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
     image_resize = cv2.resize(image, (int(width / 2), int(height / 2)))
     threshold_img_resize = cv2.resize(threshold_img, (int(width / 2), int(height / 2)))
@@ -336,13 +336,17 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
     extracted_dynamic_fields = pytesseract.image_to_data(image, lang='SLK', output_type='data.frame')
     # extracted_dynamic_fields_temp = pytesseract.image_to_data(image, lang='SLK')
     extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
+    # extracted_dynamic_fields1 = None
     # extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
+    # extracted_dynamic_fields2 = None
     # extracted_dynamic_fields_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
     # print(extracted_dynamic_fields_temp)
     # print(extracted_dynamic_fields_temp1)
     # print(extracted_dynamic_fields_temp2)
     # add as key:value pair
+    dynamic_fields.update({'cena_s_dph': None})
+    dynamic_fields.update({'cena_s_dph_conf': None})
     for i, (key, value) in enumerate(phrases.items()):
         if dynamic_fields.get(key) is None:
             if key == 'cena_s_dph':
@@ -353,12 +357,22 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                 vysl = [safe_cast_cena(safe_elem(cena1,0)), safe_cast_cena(safe_elem(cena2,0)), #TODO jano neviem co
                         safe_cast_cena(safe_elem(cena3,0))]
                 conf = [safe_elem(cena1,1), safe_elem(cena2,1), safe_elem(cena3,1)]
-                spolu = dict(zip(vysl, conf))
-                max_cena = max(spolu.keys(), key=(lambda k: spolu[k] is not None))
-                max_cena_conf = max(spolu.values(), key=(lambda k:k is not None))
+                words = [safe_elem(cena1,2), safe_elem(cena2,2),safe_elem(cena3,2)]
+                word = next(sub for sub in words if sub)
+                # spolu = dict(zip(conf,vysl))
+                # max_cena = max(spolu.keys(), key=(lambda k: spolu[k] is not None))
+                # max_cena_conf = max(spolu.values(), key=(lambda k:k is not None))
+
+                spolu = dict(zip(conf, vysl))
+                max_cena_conf = max(i for i in spolu.keys() if i is not None)
+                max_cena = spolu[max_cena_conf]
+
                 # target_word=None if target_word==0 else str(target_word).replace('.',',')
                 target_word=None if max_cena==0 else [str(max_cena).replace('.',',')]
                 dynamic_fields.update({'cena_s_dph_conf': max_cena_conf})
+                temp = dynamic_fields.get('cena_s_dph_word','')
+                dynamic_fields.update({'cena_s_dph_word': temp + word + ':' + str(max_cena_conf) + ':'
+                 + (0 if target_word is None else target_word[0]) + ';'})
             else:
                 target_word = check_and_extract(key, value, extracted_dynamic_fields)
                 if not target_word:
@@ -379,11 +393,11 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
 # extrahovanie textu cez Tesseract podla klucovych slov. Extrahovanie konkretneho riadku a vyparsovanie cielovej hodnoty
 def check_and_extract(key, phrase, extracted_dynamic_fields):
     if not extracted_dynamic_fields['text'].isnull().values.all():
-        correct_row,conf = extract_correct_row(extracted_dynamic_fields, phrase)
+        correct_row,conf,word = extract_correct_row(extracted_dynamic_fields, phrase)
         if correct_row:  # find final value in a row through regexp
-            return find_final_value(str(correct_row), key),conf
+            return find_final_value(str(correct_row), key),conf,word
     else:
-        return '-',0
+        return '-',0,''
 
 
 # hladanie konkretnej hodnoty podla zadefinovaneho typu. Vstupom je cely riadkok extrahovaneho textu, v ktorom by sa mala nachadzat hladana hodnota
@@ -430,6 +444,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     text_split = []
     rows = []
     row_text=''
+    word =''
     conf_index = 0
     for i in phrase_split:
         text_split.append(i)
@@ -470,7 +485,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     #             return
     #     if rows:
     #         return max(rows)
-
+        rows = []
         block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
         line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
         par_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['par_num'].values
@@ -485,38 +500,102 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
             width = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['width'].values
             if (height.argmax() == width.argmax()):
                 biggest_word_index = height.argmax()
+            m = max(height)
+            max_ele_index = [i for i, j in enumerate(height) if j in (range(m - 2, m + 2))]
+            if len(max_ele_index)>1:
+                # block_array = [block_num[max_ele_index[0]],block_num[max_ele_index[0]]+1,block_num[max_ele_index[1]],block_num[max_ele_index[1]]+1]
+                block_array = [block_num[max_ele_index[-1]],block_num[max_ele_index[-2]]]
+                par_array = [par_num[max_ele_index[-1]],par_num[max_ele_index[-2]]]
+                line_array = [line_num[max_ele_index[-1]],line_num[max_ele_index[-2]]]
+            else:
+                block_array = [block_num[max_ele_index[-1]]]
+                par_array = [par_num[max_ele_index[-1]]]
+                line_array = [line_num[max_ele_index[-1]]]
+
+
             if 'SUMA' in phrase_split:
 
-                search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
-                             ]['text'].values
-                # search_text = [x for x in search_text if str(x) != 'nan']
-                left = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                      & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
-                    ]['left'].values
+                # search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
+                #                                                                                     block_num[biggest_word_index]+1]))
+                #       & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                #       & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                #       # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                #              ]['text'].values
 
-                confidences = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index]]))
-                                         & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                                         & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                                         & (extracted_dynamic_fields['word_num'].isin(
-                    range(word_num[0], words_in_line)))
+                search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
+                & (extracted_dynamic_fields['par_num'].isin(par_array))
+                & (extracted_dynamic_fields['line_num'].isin(line_array))
+                    # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                                         ]['text'].values
+
+
+                # search_text = [x for x in search_text if str(x) != 'nan']
+                # left = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
+                #                                                                              block_num[biggest_word_index] + 1]))
+                #       & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                #       & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                #       # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                #     ]['left'].values
+
+                left = \
+                    extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
+                                             & (extracted_dynamic_fields['par_num'].isin(par_array))
+                                             & (extracted_dynamic_fields['line_num'].isin(line_array))
+                        # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
+                                             ]['left'].values
+
+                # confidences = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
+                #                                                                                     block_num[biggest_word_index] + 1]))
+                #                          & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
+                #                          & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
+                #                          # & (extracted_dynamic_fields['word_num'].isin( range(word_num[0], words_in_line)))
+                #                         & (extracted_dynamic_fields['word_num'].isin(range(1, 20)))
+                #                          ]['conf'].values
+
+                confidences = \
+                    extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
+                                             & (extracted_dynamic_fields['par_num'].isin(par_array))
+                                             & (extracted_dynamic_fields['line_num'].isin(line_array))
+                                         # & (extracted_dynamic_fields['word_num'].isin(range(1, 20)))
                                          ]['conf'].values
                 res = {left[i]: search_text[i] for i in range(len(left))}
+                res_conf = {left[i]: confidences[i] for i in range(len(left))}
                 new_values=[]
+                new_confidences=[]
                 keyList = list(res.keys())
-                for i, v in enumerate(keyList):
-                    if i<len(keyList)-1:
-                        next_key = keyList[i + 1]
-                        if int(next_key) - int(v) <72 and (len(str(res[v])) == 1  and str(res[v]).isdigit()):
-                            new_values.append(str(res[v]) + str(res[next_key]))
+
+                from itertools import islice
+                # lines = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+                # lit = iter(enumerate(lines))
+                # for iline, line in lit:
+                #     print(iline, line)
+                #     if line == "c":
+                #         next(islice(lit, 1, 1), None)
+                lit = iter(enumerate(keyList))
+                for i, v in enumerate(lit):
+                    if v[0] < len(keyList) - 1:
+                        next_key = keyList[v[0] + 1]
+                        if int(next_key) - int(v[1]) < 72 and (len(str(res[v[1]])) <= 2 and str(res[v[1]]).isdigit()):
+                            new_values.append(str(res[v[1]]) + str(res[next_key]))
+                            new_confidences.append(res_conf[v[1]])
+                            next(islice(lit, 1, 1), None)
                         else:
-                            new_values.append(res[v])
+                            new_values.append(res[v[1]])
+                            new_confidences.append(res_conf[v[1]])
                     else:
-                        new_values.append(res[v])
+                        new_values.append(res[v[1]])
+                        new_confidences.append(res_conf[v[1]])
+
+                # for i, v in enumerate(keyList):
+                #     if i<len(keyList)-1:
+                #         next_key = keyList[i + 1]
+                #         if int(next_key) - int(v) <72 and (len(str(res[v])) == 1 and str(res[v]).isdigit()):
+                #             new_values.append(str(res[v]) + str(res[next_key]))
+                #             i=i+2
+                #         else:
+                #             new_values.append(res[v])
+                #     else:
+                #         new_values.append(res[v])
 
                 h = []
                 for text in new_values:
@@ -525,8 +604,8 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                     rows.append(max(h))
                     conf_index = np.argmax(h)
                 # print(search_text)
-                if len(rows)>0 and not (len(rows)==1 and rows[0]==0):
-                    return max(rows), confidences[conf_index]
+                if len(rows)>0 and not ((len(rows)==1 and rows[0]==0)):
+                    return max(rows), new_confidences[conf_index],word
             if 'ICO' in phrase_split:
                 search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_num))
                             & (extracted_dynamic_fields['line_num'].isin(line_num))
@@ -553,7 +632,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
     clear_row_text = str(row_text).replace('nan', '')
     clear_row_text = unidecode.unidecode(clear_row_text.upper())
     correct_row = re.sub('[^0-9a-zA-Z,.: ]+', '', clear_row_text)
-    return correct_row,conf_index
+    return correct_row,conf_index,word
 
 
 # metoda na vyskusanie hladania pre pole regexpov.. pozor, poradie je dolezite, ak sa slovo najde loop konci, preto treba zadavat regexy od najvaic specifickej k najmenej specifickej
