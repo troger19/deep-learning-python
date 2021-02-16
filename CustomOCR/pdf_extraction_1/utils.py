@@ -17,7 +17,7 @@ import openpyxl
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount2 = ['UHRADE.*(?:\s)((\d+\s)\d+[,.]\d+)', 'UHRAD[EU](.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
-                     'UHRAD[EU].*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
+                     'UHRAD[EU].*(?:\s)(\d\s\d+[,.]\d+)','UHRAD[EU].*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
 reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
 reg_ecv_dummy = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))-([0-9]{3})([A-Z]{2})'
@@ -40,6 +40,9 @@ def safe_cast_cena(val):
     if val is None:
         return 0
     val = re.sub(r'[^0-9.,]+', '', str(val))
+    result = re.match('^0\d+', val)  # ak to zacina napr. 09...  ide o cislo.. 0.9 prejde
+    if result:
+        return 0
     val = val.strip('.,')
     if '.' in val and ',' in val:
         bodka_index = val.find('.')
@@ -231,19 +234,23 @@ def extract_qr_code(full_path, extraction_method):
             ekasa_response = requests.post('https://ekasa.financnasprava.sk/mdu/api/v1/opd/receipt/find',
                                            json={"receiptId": qrcode})
             if ekasa_response and ekasa_response.json()['receipt']:
+                cena_s_dph = str(ekasa_response.json()['receipt']['totalPrice']).replace('.', ',')
                 extracted_values.update(
-                    {'cena_s_dph': str(ekasa_response.json()['receipt']['totalPrice']).replace('.', ',')})
+                    {'cena_s_dph': cena_s_dph})
+                extracted_values.update({'cena_s_dph_conf': '100'})
+                extracted_values.update({'cena_s_dph_word': 'UHRADA_QR|100|'+cena_s_dph})
                 extraction_method = 'QR - Ekasa'
             else:
                 print('PAY-By-Square')
                 extraction_method = 'QR - PayBySquare'
                 pay_by_square_response = requests.get('http://localhost:8102/pdf/v1/qrcode/' + qrcode)
                 if pay_by_square_response and pay_by_square_response.json()['payments']:
-                    extracted_values.update(
-                        {'cena_s_dph': str(pay_by_square_response.json()['payments'][0]['amount']).replace('.', ',')}
-                    )
+                    cena_s_dph = str(pay_by_square_response.json()['payments'][0]['amount']).replace('.', ',')
+                    extracted_values.update({'cena_s_dph': cena_s_dph})
                     extracted_values.update(
                         {'iban': pay_by_square_response.json()['payments'][0]['bankAccounts'][0]['iban']})
+                    extracted_values.update({'cena_s_dph_conf': '100'})
+                    extracted_values.update({'cena_s_dph_word': 'UHRADA_QR|100|'+cena_s_dph})
 
     return extracted_values, extraction_method
 
@@ -259,6 +266,8 @@ def extract_spd(qrcode, extracted_values):
     if '.' in cena_s_dph:
         cena_s_dph = str(cena_s_dph).replace('.',',')
     extracted_values.update({'cena_s_dph': cena_s_dph})
+    extracted_values.update({'cena_s_dph_conf': '100'})
+    extracted_values.update({'cena_s_dph_word': 'UHRADA_QR|100|' + cena_s_dph})
 
 
 def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy, filename):
@@ -319,12 +328,12 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
         gray_image = image
     height, width = image.shape[:2]
     # converting image into gray scale image
-
-    threshold_img = cv2.threshold(gray_image, 200, 255, cv2.THRESH_BINARY)[1]
+    resize_factor = 3
+    threshold_img = cv2.threshold(gray_image, 125, 255, cv2.THRESH_BINARY)[1]
     threshold_img1 = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    image_resize = cv2.resize(image, (int(width / 2), int(height / 2)))
-    threshold_img_resize = cv2.resize(threshold_img, (int(width / 2), int(height / 2)))
-    threshold_img1_resize = cv2.resize(threshold_img1, (int(width / 2), int(height / 2)))
+    image_resize = cv2.resize(image, (int(width / resize_factor), int(height / resize_factor)))
+    threshold_img_resize = cv2.resize(threshold_img, (int(width / resize_factor), int(height / resize_factor)))
+    threshold_img1_resize = cv2.resize(threshold_img1, (int(width / resize_factor), int(height / resize_factor)))
     # cv2.imshow('image ',image_resize)
     # cv2.waitKey(0)
     # cv2.imshow('threshold_img ', threshold_img_resize)
@@ -345,8 +354,9 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
     # print(extracted_dynamic_fields_temp1)
     # print(extracted_dynamic_fields_temp2)
     # add as key:value pair
-    dynamic_fields.update({'cena_s_dph': None})
-    dynamic_fields.update({'cena_s_dph_conf': None})
+    if 'HRAD' not in extracted_values.get('cena_s_dph_word',''):
+        dynamic_fields.update({'cena_s_dph': None})
+        dynamic_fields.update({'cena_s_dph_conf': None})
     for i, (key, value) in enumerate(phrases.items()):
         if dynamic_fields.get(key) is None:
             if key == 'cena_s_dph':
@@ -358,21 +368,23 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                         safe_cast_cena(safe_elem(cena3,0))]
                 conf = [safe_elem(cena1,1), safe_elem(cena2,1), safe_elem(cena3,1)]
                 words = [safe_elem(cena1,2), safe_elem(cena2,2),safe_elem(cena3,2)]
-                word = next(sub for sub in words if sub)
+                word = next((item for item in words if item is not None), '')
                 # spolu = dict(zip(conf,vysl))
                 # max_cena = max(spolu.keys(), key=(lambda k: spolu[k] is not None))
                 # max_cena_conf = max(spolu.values(), key=(lambda k:k is not None))
 
                 spolu = dict(zip(conf, vysl))
-                max_cena_conf = max(i for i in spolu.keys() if i is not None)
-                max_cena = spolu[max_cena_conf]
+                spolu.pop(None,None)
+                spolu.pop(0,None)
+                max_cena_conf = '' if len(spolu.keys())==0 else max(i for i in spolu.keys() if i is not None)
+                max_cena = 0 if max_cena_conf == '' else spolu[max_cena_conf]
 
                 # target_word=None if target_word==0 else str(target_word).replace('.',',')
                 target_word=None if max_cena==0 else [str(max_cena).replace('.',',')]
                 dynamic_fields.update({'cena_s_dph_conf': max_cena_conf})
                 temp = dynamic_fields.get('cena_s_dph_word','')
-                dynamic_fields.update({'cena_s_dph_word': temp + word + ':' + str(max_cena_conf) + ':'
-                 + (0 if target_word is None else target_word[0]) + ';'})
+                dynamic_fields.update({'cena_s_dph_word': temp + word + '|' + str(max_cena_conf) + '|'
+                 + ('0' if target_word is None else target_word[0]) + ';'})
             else:
                 target_word = check_and_extract(key, value, extracted_dynamic_fields)
                 if not target_word:
@@ -502,15 +514,16 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                 biggest_word_index = height.argmax()
             m = max(height)
             max_ele_index = [i for i, j in enumerate(height) if j in (range(m - 2, m + 2))]
-            if len(max_ele_index)>1:
+            # if len(max_ele_index)>1:
+            if len(block_num)>1:
                 # block_array = [block_num[max_ele_index[0]],block_num[max_ele_index[0]]+1,block_num[max_ele_index[1]],block_num[max_ele_index[1]]+1]
-                block_array = [block_num[max_ele_index[-1]],block_num[max_ele_index[-2]]]
-                par_array = [par_num[max_ele_index[-1]],par_num[max_ele_index[-2]]]
-                line_array = [line_num[max_ele_index[-1]],line_num[max_ele_index[-2]]]
+                block_array = [block_num[-1],block_num[-2]]
+                par_array = [par_num[-1],par_num[-2]]
+                line_array = [line_num[-1],line_num[-2]]
             else:
-                block_array = [block_num[max_ele_index[-1]]]
-                par_array = [par_num[max_ele_index[-1]]]
-                line_array = [line_num[max_ele_index[-1]]]
+                block_array = [block_num[-1]]
+                par_array = [par_num[-1]]
+                line_array = [line_num[-1]]
 
 
             if 'SUMA' in phrase_split:
@@ -575,7 +588,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                 for i, v in enumerate(lit):
                     if v[0] < len(keyList) - 1:
                         next_key = keyList[v[0] + 1]
-                        if int(next_key) - int(v[1]) < 72 and (len(str(res[v[1]])) <= 2 and str(res[v[1]]).isdigit()):
+                        if int(next_key) - int(v[1]) < 120 and (len(str(res[v[1]])) <= 2 and str(res[v[1]]).isdigit()):
                             new_values.append(str(res[v[1]]) + str(res[next_key]))
                             new_confidences.append(res_conf[v[1]])
                             next(islice(lit, 1, 1), None)
@@ -655,7 +668,7 @@ def try_multiple_regex(row, regexp, group=None, is_number=False):
 # ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
     csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'cena_s_dph_target',
-                   'cena_s_dph_extracted', 'cena_s_dph_conf','iban_target', 'iban_extracted',
+                   'cena_s_dph_extracted', 'cena_s_dph_conf', 'cena_s_dph_word','iban_target', 'iban_extracted',
                    'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
@@ -663,6 +676,7 @@ def save_to_csv(filename, extraction_method, target_values, extracted_values, el
          'cena_s_dph_target': target_values.get('cena_s_dph', ' -'),
          'cena_s_dph_extracted': extracted_values.get('cena_s_dph', ' -'),
          'cena_s_dph_conf': extracted_values.get('cena_s_dph_conf', ' -'),
+         'cena_s_dph_word': extracted_values.get('cena_s_dph_word', ' -'),
          'iban_target': target_values.get('iban', ' -'), 'iban_extracted': extracted_values.get('iban', ' -'),
          'ecv_target': target_values.get('ecv', ' -'), 'ecv_extracted': extracted_values.get('ecv', ' -'),
          'vin_target': target_values.get('vin', ' -'), 'vin_extracted': extracted_values.get('vin', ' -'),

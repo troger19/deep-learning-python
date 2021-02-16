@@ -32,25 +32,31 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
-phrases_to_extract = {'cena_s_dph': 'ÚHRADE UHRADE CELKOM SUMA ÚHRADÉ CELKEM', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV SPZ ŠPZ EVČ EČ','vin': 'VIN'}
+phrases_to_extract = {'cena_s_dph': 'ÚHRADE UHRADE ÚHRADU KÚHRADE CELKOM SUMA ÚHRADÉ CELKEM', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV SPZ ŠPZ EVČ EČ'}
+# phrases_to_extract = {'cena_s_dph': 'ÚHRADE UHRADE ÚHRADU KÚHRADE CELKOM SUMA ÚHRADÉ CELKEM'}
 myList = ['ÚHRADE','SUMA','CELKOM','FAKTURA','FAKTÚRA','IBAN']
 target_values = 'validation\\faktury_1000.xlsx'
 
 
-def are_all_values_extracted(extracted_values):
+def are_all_values_extracted(extracted_values,extraction_method):
+    if extraction_method is None:
+        return False
+    else:
+        last_method = extraction_method.split('|')[-1]
     if extracted_values.get('iban') is not None and extracted_values.get('ico') is not None:
         ico_from_iban = ico_servisy.get(extracted_values.get('iban'))
         ico_extracted = extracted_values.get('ico')
         if ico_extracted !=ico_from_iban and ico_from_iban is not None:
             extracted_values.update({'ico': ico_from_iban})
-    if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None
-            and extracted_values.get('ecv') is not None):
-        if 'HRAD' in extracted_values.get('cena_s_dph_word'):
+    if (extracted_values.get('cena_s_dph') is not None and extracted_values.get('ico') is not None and extracted_values.get('iban') is not None):
+        if last_method == 'PDF TEXT':
+            return True
+        if last_method == 'OCR' and 'HRAD' in extracted_values.get('cena_s_dph_word',''):
             hodnoty = extracted_values.get('cena_s_dph_word').split(';')
             for h in hodnoty:
                 if 'HRAD' in h:
-                    cena_uhrady = h.split(':')
-                    extracted_values.update({'cena_s_dph':cena_uhrady[2] })
+                    cena_uhrady = h.split('|')
+                    extracted_values.update({'cena_s_dph':cena_uhrady[2]})
                     break
             return True
         else:
@@ -66,7 +72,7 @@ def extract_values_from_file(full_path):
     extracted_values,extraction_method = extract_qr_code(full_path,extraction_method)
 
     extension = splitext(full_path)[1]
-    if not are_all_values_extracted(extracted_values):
+    if not are_all_values_extracted(extracted_values,extraction_method):
         if extension.lower() =='.pdf':
         # faktura
             try:
@@ -81,15 +87,16 @@ def extract_values_from_file(full_path):
                             unaccented_upper_text = unidecode.unidecode(extracted_text.upper())
                             # print(unaccented_upper_text)
                             extracted_values = extract_pdf_text(unaccented_upper_text,extracted_values,ico_servisy)
-                            if not are_all_values_extracted(extracted_values):
+                            if not are_all_values_extracted(extracted_values,extraction_method):
                                 extracted_values, extraction_method = ocr_extraction(extracted_values, extraction_method, full_path, i, img_pdf)
                         else:
                             extracted_values, extraction_method = ocr_extraction(extracted_values, extraction_method, full_path, i, img_pdf)
-                        if are_all_values_extracted(extracted_values):
+                        if are_all_values_extracted(extracted_values,extraction_method):
                             break
             except:
                 print('Nastal problem pri spracovani PDF' + full_path)
                 extraction_method = 'ERROR'
+                extracted_values.update({'extraction_method':extraction_method})
         elif extension.lower() in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
             extraction_method = set_extraction_method(extracted_values, extraction_method,'OCR')
             img = cv2.imdecode(np.fromfile(full_path, dtype=np.uint8), -1)
@@ -99,6 +106,21 @@ def extract_values_from_file(full_path):
     # rukou pisana faktura
     elif not extracted_values:
         print('rukou pisana faktura')
+
+    if extracted_values.get('cena_s_dph') is None and extracted_values.get('cena_s_dph_word') is not None:
+        hodnoty = extracted_values.get('cena_s_dph_word').split(';')
+        aa = {}
+        for h in hodnoty:
+            hh = h.split('|')
+            if hh is not None and len(hh) > 2:
+                aa.update({hh[1]: hh[2]})
+            # print(aa)
+        # print(aa)
+        conf = max(aa.keys())
+        cena = aa.get(conf)
+
+        extracted_values.update({'cena_s_dph': cena})
+        extracted_values.update({'cena_s_dph_conf': conf})
 
     elapsed_time = time.time() - start_time
     elapsed_time = time.strftime("%M:%S", time.gmtime(elapsed_time))
@@ -120,7 +142,7 @@ def ocr_extraction(extracted_values, extraction_method,full_path, i, img_pdf):
 
 def set_extraction_method(extracted_values, extraction_method, new_method):
     if len(extracted_values) > 0:  # ak uz bolo nieco rozpoznane inou metodou zachovaj aj povodnu metodu
-        extraction_method = extraction_method + ' | ' + new_method
+        extraction_method = extraction_method + '|' + new_method
     else:  # ak zatial nebolo nic rozpoznane, urci novu metodu
         extraction_method = new_method
     return extraction_method
