@@ -10,6 +10,7 @@ from os.path import splitext
 import os
 import time
 import openpyxl
+import sys
 
 #TODO
 #https://b2bportaltest.csobpoistovna.sk/test/api/skp/swagger-ui.html#/SkpRestController/getVehicleEvidenceUsingGET
@@ -94,6 +95,7 @@ def extract_values_from_file(full_path):
                         if are_all_values_extracted(extracted_values,extraction_method):
                             break
             except:
+                print(sys.exc_info())
                 print('Nastal problem pri spracovani PDF' + full_path)
                 extraction_method = 'ERROR'
                 extracted_values.update({'extraction_method':extraction_method})
