@@ -28,7 +28,7 @@ reg_vin = [
     '(([a-h,A-H,j-n,J-N,p-z,P-Z,0-9]{9})([a-h,A-H,j-n,J-N,p,P,r-t,R-T,v-z,V-Z,0-9])([a-h,A-H,j-n,J-N,p-z,P-Z,0-9])\s*(\d{6}))',
     '(?=.*[0-9])(?=.*[A-z])[0-9A-z-]{17}']
 reg_total_amount_number = ['\d+\s*\d+\s*\d+[.,]?\d+', '\d+[.,]?\d+']
-reg_ico = ['IC.*(27082440)', 'ICO\s*?\.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:','(\d{8}).*DIC:']
+reg_ico = ['IC.*(27082440)', 'ICO[: ]*(\d{8})', 'ICO\s*?\.?\s*?(\d{8})', 'ICO\s*?.?\s*?(\d{2} \d{3} \d{3})', 'ICO\s*?.?\s*?(\d{2}\s*?\d{3}\s*?\d{3})','(\d{8})\s*DIC:','(\d{8}).*DIC:']
 
 
 
@@ -134,6 +134,7 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy_p):
                 ico = ico_servisy.get(extracted_values.get('iban'))
                 if ico:
                     extracted_values.update({'ico': ico})
+                    extracted_values.update({'ico_conf': 999})
 
     return extracted_values
 
@@ -440,6 +441,8 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
             dynamic_fields.update({key: None if target_word is None else target_word[0]})
             if key == 'iban':
                 dynamic_fields.update({'iban_conf': None if target_word is None else target_word[1]})
+            if key == 'ico':
+                dynamic_fields.update({'ico_conf': None if target_word is None else target_word[1]})
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
     dynamic_fields = do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1,
@@ -596,9 +599,31 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                             & (extracted_dynamic_fields['line_num'].isin(line_num))
                             & (extracted_dynamic_fields['par_num'].isin(par_num))
                                                        ]['text'].values
+
+                confidences = \
+                    extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
+                                             & (extracted_dynamic_fields['par_num'].isin(par_array))
+                                             & (extracted_dynamic_fields['line_num'].isin(line_array))
+                        # & (extracted_dynamic_fields['word_num'].isin(range(1, 20)))
+                                             ]['conf'].values
+                conf_ind = np.where(search_text==word)
+                aa = []
+                for i in conf_ind:
+                    try:
+                        aa = np.append(aa, confidences[i + 1])
+                    except:
+                        break
+                non_zero_ico_conf = sum(map(lambda x : x > 0, aa))
+                if non_zero_ico_conf==1:
+                    conf_index = int(aa[np.where(aa>0)])
+                elif non_zero_ico_conf > 1:
+                    conf_index = 999
+                else:
+                    conf_index = 0
+
                 if len(search_text)>0:
-                    row_text= search_text
-                    break
+                    row_text = row_text + str(search_text)
+                    # break
             if 'IBAN' in phrase_split or 'ECV' in phrase_split:
                 search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_num))
                                                     & (extracted_dynamic_fields['line_num'].isin(line_num))
@@ -621,12 +646,14 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                     if IBAN_seg_len >20:  # cele cislo IBANU je v 1 bunke
                         conf_index = confidences[conf_ind+1]
                     else:
-                        #TODO vypocitaj priemer
                         while IBAN_seg_len<20:
                             IBAN_seg_len = IBAN_seg_len + len(search_text[conf_ind+1])
                             conf_ind = conf_ind + 1
                         from statistics import mean
-                        conf_index = mean(confidences[range(idxs[0] + 1, conf_ind + 3)])
+                        try:
+                            conf_index = mean(confidences[range(idxs[0] + 1, conf_ind + 3)])
+                        except:
+                            print('Nastal problem pri vypocte pravdepodobnosti pre IBAN. Nalezeny retazec nema spravnu dlzku')
 
                 if len(search_text) > 0:
                     row_text = row_text.join(search_text)
@@ -658,12 +685,13 @@ def try_multiple_regex(row, regexp, group=None, is_number=False):
 
 # ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
-    csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'cena_s_dph_target',
+    csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'ico_conf','cena_s_dph_target',
                    'cena_s_dph_extracted', 'cena_s_dph_conf', 'cena_s_dph_word','iban_target', 'iban_extracted', 'iban_conf',
                    'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
          'ico_target': target_values.get('ico', ' -'), 'ico_extracted': extracted_values.get('ico', ' -'),
+         'ico_conf': extracted_values.get('ico_conf', ' -'),
          'cena_s_dph_target': target_values.get('cena_s_dph', ' -'),
          'cena_s_dph_extracted': extracted_values.get('cena_s_dph', ' -'),
          'cena_s_dph_conf': extracted_values.get('cena_s_dph_conf', ' -'),
