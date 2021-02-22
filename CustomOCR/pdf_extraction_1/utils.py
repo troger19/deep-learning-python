@@ -14,10 +14,12 @@ import numpy as np
 import csv
 import xlrd
 import openpyxl
+import math
 
 amount_whitelist_characters = re.compile('[^0-9,.]')
 reg_total_amount2 = ['UHRADE.*(?:\s)((\d+\s)\d+[,.]\d+)', 'UHRAD[EU](.*)(e|eur|EUR|€|euro)(?:\s|$)', 'SUMA(.*)(e|eur|EUR|€|euro)(?:\s|$)',
                      'UHRAD[EU].*(?:\s)(\d\s\d+[,.]\d+)','UHRAD[EU].*(?:\s)(\d+[,.]\d+)', 'CELKOM(.*)(e|eur|EUR|€|euro)(?:\s|$)']  # 'CELKOM.*(?:\s)(\d+[,.]\d+)'
+reg_skk = ['CELKOM(.*)SKK','SUMA(.*)SK','30,1260 SK (.*) SK','30,1260(.*)SK','30,126SKK\/1€(.*)SKK','30,12[86][S5]KK\/1€(.*)SKK','30[, ]?12[68][S5]KK(.*)SKK']
 reg_dummy_cena = 'SUMAKHRADE((\d+)[.,](\d+))EUR'
 reg_ecv = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))([ |-]{0,1})([0-9]{3})([A-Z]{2})'
 reg_ecv_dummy = '(B(A|B|C|J|L|N|R|S|Y|T)|CA|D(K|S|T)|G(A|L)|H(C|E)|IL|K(A|I|E|K|M|N|S)|L(E|C|M|V)|M(A|I|L|T|Y)|N(I|O|M|R|Z)|P(B|D|E|O|K|N|P|T|U|V)|R(A|K|S|V)|S(A|B|C|E|I|K|L|O|N|P|V)|T(A|C|N|O|R|S|T|V)|V(K|T)|Z(A|C|H|I|M|V))-([0-9]{3})([A-Z]{2})'
@@ -37,7 +39,7 @@ def safe_cast(val, to_type, default=None):
         return default
 
 def safe_cast_cena(val):
-    if val is None:
+    if val is None or '/' in val or '30,1260' in val:
         return 0
     val = re.sub(r'[^0-9.,]+', '', str(val))
     result = re.match('^0\d+', val)  # ak to zacina napr. 09...  ide o cislo.. 0.9 prejde
@@ -55,7 +57,12 @@ def safe_cast_cena(val):
     elif ',' in val:
         val = str(val).replace(',', '.')
 
-    return safe_cast(val, float, 0)
+    casted_float = safe_cast(val, float, 0)
+    if casted_float<float(10000000):
+        return casted_float
+    else:
+        return 0
+
 
 def extract_ico(unaccented_upper_text):
     for i in reg_ico:
@@ -79,6 +86,10 @@ def extract_pdf_text(unaccented_upper_text, extracted_values,ico_servisy_p):
     ico_servisy = ico_servisy_p
     extracted_values = extracted_values
     # SUMA
+    if 'HRAD' not in extracted_values.get('cena_s_dph_word',''):
+        extracted_values.update({'cena_s_dph': None})
+        extracted_values.update({'cena_s_dph_conf': None})
+
     if extracted_values.get('cena_s_dph') is None:
         amount_str = try_multiple_regex(unaccented_upper_text, reg_total_amount2, 1, True)
         if amount_str:
@@ -144,7 +155,6 @@ def load_target_values(filename):
 def load_target_values_excel(target_values):
     ps = openpyxl.load_workbook('%s' % target_values)
     sheet = ps['Sheet1']
-    print(sheet.max_row)
     total_info = {}
     for row in range(2, sheet.max_row + 1):
         filename = sheet['A' + str(row)].value
@@ -270,9 +280,10 @@ def extract_spd(qrcode, extracted_values):
     extracted_values.update({'cena_s_dph_word': 'UHRADA_QR|100|' + cena_s_dph})
 
 
-def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,ico_servisy, filename):
+def do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1, extracted_dynamic_fields2,
+                      extracted_dynamic_fields4,ico_servisy, filename):
     all_text_from_all_versions = re.sub('nan', '', str(extracted_dynamic_fields['text'].values) + (
-        str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)))
+        str(extracted_dynamic_fields1['text'].values)) + (str(extracted_dynamic_fields2['text'].values)) + (str(extracted_dynamic_fields4['text'].values)))
     all_text_from_all_versions = re.sub('[^0-9a-zA-Z,.-]+', '', all_text_from_all_versions)
     for i in dynamic_fields:
         if i == 'cena_s_dph' and dynamic_fields[i] is None:
@@ -322,32 +333,52 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
     global ico_servisy
     ico_servisy = ico_servisy_p
     dynamic_fields = extracted_values
+    try:
+        rotation = pytesseract.image_to_osd(image,output_type='dict')['rotate']
+        if rotation !=0:
+            print('rotation', rotation)
+        if rotation == 90:
+            image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    except:
+        print('Nastal problem so zistenim rotacie')
     if (len(image.shape) > 2):
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray_image = image
+
     height, width = image.shape[:2]
     # converting image into gray scale image
-    resize_factor = 3
+    resize_factor = 1
+
     threshold_img = cv2.threshold(gray_image, 125, 255, cv2.THRESH_BINARY)[1]
     threshold_img1 = cv2.threshold(gray_image, 100, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    blured1 = cv2.medianBlur(gray_image, 3)
+    blured2 = cv2.medianBlur(gray_image, 51)
+    divided = np.ma.divide(blured1, blured2).data
+    normed = np.uint8(255 * divided / divided.max())
+    threshed_normed = cv2.threshold(normed, 100, 255, cv2.THRESH_OTSU)[1]
     image_resize = cv2.resize(image, (int(width / resize_factor), int(height / resize_factor)))
     threshold_img_resize = cv2.resize(threshold_img, (int(width / resize_factor), int(height / resize_factor)))
     threshold_img1_resize = cv2.resize(threshold_img1, (int(width / resize_factor), int(height / resize_factor)))
+    threshed_resize = cv2.resize(threshed_normed, (int(width / resize_factor), int(height / resize_factor)))
     # cv2.imshow('image ',image_resize)
     # cv2.waitKey(0)
     # cv2.imshow('threshold_img ', threshold_img_resize)
     # cv2.waitKey(0)
     # cv2.imshow('threshold_img1 ', threshold_img1_resize)
     # cv2.waitKey(0)
+    # cv2.imshow('threshed ',threshed_resize)
+    # cv2.waitKey(0)
+
     # extract fields
-    # gfg = pytesseract.image_to_data(threshold_img, lang='SLK')
-    extracted_dynamic_fields = pytesseract.image_to_data(image, lang='SLK', output_type='data.frame')
+    extracted_dynamic_fields = pytesseract.image_to_data(image, lang='SLK', output_type='data.frame') # config='-c tessedit_char_whitelist=0123456789'
     # extracted_dynamic_fields_temp = pytesseract.image_to_data(image, lang='SLK')
+    extracted_dynamic_fields_string= pytesseract.image_to_string(image, lang='SLK')
     extracted_dynamic_fields1 = pytesseract.image_to_data(threshold_img, lang='SLK', output_type='data.frame')
     # extracted_dynamic_fields1 = None
     # extracted_dynamic_fields_temp1 = pytesseract.image_to_data(threshold_img, lang='SLK')
     extracted_dynamic_fields2 = pytesseract.image_to_data(threshold_img1, lang='SLK', output_type='data.frame')
+    extracted_dynamic_fields4 = pytesseract.image_to_data(threshed_normed, lang='SLK', output_type='data.frame')
     # extracted_dynamic_fields2 = None
     # extracted_dynamic_fields_temp2 = pytesseract.image_to_data(threshold_img1, lang='SLK')
     # print(extracted_dynamic_fields_temp)
@@ -363,23 +394,34 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                 cena1 = check_and_extract(key, value, extracted_dynamic_fields)
                 cena2 = check_and_extract(key, value, extracted_dynamic_fields1)
                 cena3 = check_and_extract(key, value, extracted_dynamic_fields2)
-                # target_word = max(safe_cast_cena(cena1), safe_cast_cena(cena2),safe_cast_cena(cena3))
-                vysl = [safe_cast_cena(safe_elem(cena1,0)), safe_cast_cena(safe_elem(cena2,0)), #TODO jano neviem co
-                        safe_cast_cena(safe_elem(cena3,0))]
-                conf = [safe_elem(cena1,1), safe_elem(cena2,1), safe_elem(cena3,1)]
-                words = [safe_elem(cena1,2), safe_elem(cena2,2),safe_elem(cena3,2)]
-                word = next((item for item in words if item is not None), '')
-                # spolu = dict(zip(conf,vysl))
-                # max_cena = max(spolu.keys(), key=(lambda k: spolu[k] is not None))
-                # max_cena_conf = max(spolu.values(), key=(lambda k:k is not None))
+                cena4 = check_and_extract(key, value, extracted_dynamic_fields4)
 
-                spolu = dict(zip(conf, vysl))
-                spolu.pop(None,None)
-                spolu.pop(0,None)
-                max_cena_conf = '' if len(spolu.keys())==0 else max(i for i in spolu.keys() if i is not None)
-                max_cena = 0 if max_cena_conf == '' else spolu[max_cena_conf]
+                cena5 = try_multiple_regex(extracted_dynamic_fields_string,['Celková fakturovaná suma: EUR ((\d+)(\s)?(\d+)[,.](\d+))'],True)
 
-                # target_word=None if target_word==0 else str(target_word).replace('.',',')
+                vysl = [safe_cast_cena(safe_elem(cena1,0)), safe_cast_cena(safe_elem(cena2,0)),
+                        safe_cast_cena(safe_elem(cena3,0)), safe_cast_cena(safe_elem(cena4,0))]
+                conf = [safe_elem(cena1,1), safe_elem(cena2,1), safe_elem(cena3,1), safe_elem(cena4,1)]
+                words = [safe_elem(cena1,2), safe_elem(cena2,2),safe_elem(cena3,2),safe_elem(cena4,2)]
+                all_same = all(x == words[0] for x in words if x is not None)
+                if not all_same:
+                    new_conf = []
+                    new_vysl = []
+                    new_words = []
+                    for i, w in enumerate(words):
+                        if w is not None and 'HRAD' in w:
+                            new_conf.append(conf[i])
+                            new_vysl.append(vysl[i])
+                            new_words.append(w)
+
+                    if new_conf:
+                        conf = new_conf
+                        vysl = new_vysl
+                        words = new_words
+
+                max_cena_conf =None if all(v is None for v in words) else max(i for i in conf if i is not None)
+                max_cena = 0 if max_cena_conf == None else vysl[conf.index(max_cena_conf)]
+                word = '' if max_cena_conf == None else words[conf.index(max_cena_conf)]
+
                 target_word=None if max_cena==0 else [str(max_cena).replace('.',',')]
                 dynamic_fields.update({'cena_s_dph_conf': max_cena_conf})
                 temp = dynamic_fields.get('cena_s_dph_word','')
@@ -391,13 +433,17 @@ def extract_dynamic_fields(image, phrases, extracted_values, ico_servisy_p, file
                     target_word = check_and_extract(key, value, extracted_dynamic_fields1)
                 if not target_word:
                     target_word = check_and_extract(key, value, extracted_dynamic_fields2)
+                if not target_word:
+                    target_word = check_and_extract(key, value, extracted_dynamic_fields4)
 
             # if target_word is not None:
             dynamic_fields.update({key: None if target_word is None else target_word[0]})
+            if key == 'iban':
+                dynamic_fields.update({'iban_conf': None if target_word is None else target_word[1]})
 
     # v pripade ze su niektore fieldy prazdne, tak skusit este regexp na cely text
     dynamic_fields = do_dummy_matching(dynamic_fields, extracted_dynamic_fields, extracted_dynamic_fields1,
-                                       extracted_dynamic_fields2,ico_servisy,filename)
+                                       extracted_dynamic_fields2,extracted_dynamic_fields4,ico_servisy,filename)
     # return JSON like object with phrase name and extracted values (amounts in EUR, etc..)  -> sum_total:20,26
     return dynamic_fields
 
@@ -463,58 +509,14 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
         text_split.append(i + ':')
     extracted_dynamic_fields['text'] = extracted_dynamic_fields['text'].str.upper()
     for word in text_split:
-    #     # line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
-    #     block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
-    #     if 'SUMA' in phrase_split and block_num.size>0:
-    #         left = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['left'].values
-    #         value = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
-    #         res = {left[i]: value[i] for i in range(len(left))}
-    #         new_values=[]
-    #         keyList = list(res.keys())
-    #         for i, v in enumerate(keyList):
-    #             if i<len(keyList)-1:
-    #                 next_key = keyList[i + 1]
-    #                 if int(next_key) - int(v) <43:
-    #                     new_values.append(str(res[v]) + str(res[next_key]))
-    #                 else:
-    #                     new_values.append(res[v])
-    #             else:
-    #                 new_values.append(res[v])
-    #         hodnoty = re.findall("\d+[,.]\d+[,]?\d{2}?", str(new_values))
-    #         h = []
-    #         for i in hodnoty:
-    #             i = i.replace(',', '.')
-    #             if i.count('.') > 1:
-    #                 i = i.replace('.', '', 1)
-    #             h.append(float(i))
-    #         if h:
-    #             rows.append(max(h))
-    #     else:
-    #         if len(block_num) == 1:
-    #             break
-    #         if len(block_num) > 1:
-    #             print('Naslo sa viac hodnot pre frazu : ' + phrase)  # TODO ulozit vsetky hodnoty a skusit potom pre IBAN a ICO vycitat spravnu
-    #             return
-    #     if rows:
-    #         return max(rows)
         rows = []
         block_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['block_num'].values
         line_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['line_num'].values
         par_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['par_num'].values
         word_num = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['word_num'].values
         biggest_word_index=-1
-
-        # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['line_num'].values)
-        # print(extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin([23])]['text'].values)
         if block_num.size>0 and line_num.size>0:
             words_in_line = sum(list(extracted_dynamic_fields[extracted_dynamic_fields['block_num'] == block_num[-1]]['line_num'] == line_num[biggest_word_index]))
-            height = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['height'].values
-            width = extracted_dynamic_fields[extracted_dynamic_fields['text'] == word]['width'].values
-            if (height.argmax() == width.argmax()):
-                biggest_word_index = height.argmax()
-            m = max(height)
-            max_ele_index = [i for i, j in enumerate(height) if j in (range(m - 2, m + 2))]
-            # if len(max_ele_index)>1:
             if len(block_num)>1:
                 # block_array = [block_num[max_ele_index[0]],block_num[max_ele_index[0]]+1,block_num[max_ele_index[1]],block_num[max_ele_index[1]]+1]
                 block_array = [block_num[-1],block_num[-2]]
@@ -525,15 +527,7 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                 par_array = [par_num[-1]]
                 line_array = [line_num[-1]]
 
-
             if 'SUMA' in phrase_split:
-
-                # search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
-                #                                                                                     block_num[biggest_word_index]+1]))
-                #       & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                #       & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                #       # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
-                #              ]['text'].values
 
                 search_text = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
                 & (extracted_dynamic_fields['par_num'].isin(par_array))
@@ -541,29 +535,12 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                     # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
                                          ]['text'].values
 
-
-                # search_text = [x for x in search_text if str(x) != 'nan']
-                # left = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
-                #                                                                              block_num[biggest_word_index] + 1]))
-                #       & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                #       & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                #       # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
-                #     ]['left'].values
-
                 left = \
                     extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
                                              & (extracted_dynamic_fields['par_num'].isin(par_array))
                                              & (extracted_dynamic_fields['line_num'].isin(line_array))
                         # & (extracted_dynamic_fields['word_num'].isin(range(word_num[0],words_in_line)))
                                              ]['left'].values
-
-                # confidences = extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin([block_num[biggest_word_index],
-                #                                                                                     block_num[biggest_word_index] + 1]))
-                #                          & (extracted_dynamic_fields['line_num'].isin([line_num[biggest_word_index]]))
-                #                          & (extracted_dynamic_fields['par_num'].isin([par_num[biggest_word_index]]))
-                #                          # & (extracted_dynamic_fields['word_num'].isin( range(word_num[0], words_in_line)))
-                #                         & (extracted_dynamic_fields['word_num'].isin(range(1, 20)))
-                #                          ]['conf'].values
 
                 confidences = \
                     extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
@@ -577,13 +554,9 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                 new_confidences=[]
                 keyList = list(res.keys())
 
+                skk = try_multiple_regex(str(search_text).replace("'",''), reg_skk, 1, True)
+
                 from itertools import islice
-                # lines = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-                # lit = iter(enumerate(lines))
-                # for iline, line in lit:
-                #     print(iline, line)
-                #     if line == "c":
-                #         next(islice(lit, 1, 1), None)
                 lit = iter(enumerate(keyList))
                 for i, v in enumerate(lit):
                     if v[0] < len(keyList) - 1:
@@ -599,20 +572,19 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                         new_values.append(res[v[1]])
                         new_confidences.append(res_conf[v[1]])
 
-                # for i, v in enumerate(keyList):
-                #     if i<len(keyList)-1:
-                #         next_key = keyList[i + 1]
-                #         if int(next_key) - int(v) <72 and (len(str(res[v])) == 1 and str(res[v]).isdigit()):
-                #             new_values.append(str(res[v]) + str(res[next_key]))
-                #             i=i+2
-                #         else:
-                #             new_values.append(res[v])
-                #     else:
-                #         new_values.append(res[v])
-
                 h = []
+                new_values = [x for x in new_values if x == x]  # odstran vsetky nan
+                for i, v in enumerate(new_values):
+                    new_values[i] = re.sub('30[,]?12[86][S5]KK[\/1€]?', '', v)
                 for text in new_values:
                     h.append(safe_cast_cena(text))
+
+                if skk:
+                    skk = skk.replace("'",'')
+                    skk_float = safe_cast_cena(skk)
+                    if skk_float in h:
+                        h.remove(skk_float)
+
                 if h:
                     rows.append(max(h))
                     conf_index = np.argmax(h)
@@ -634,13 +606,32 @@ def extract_correct_row(extracted_dynamic_fields, phrase):
                                                     & (extracted_dynamic_fields['word_num'].isin(
                     range(word_num[0], words_in_line)))
                                                     ]['text'].values
+
+                confidences = \
+                    extracted_dynamic_fields[(extracted_dynamic_fields['block_num'].isin(block_array))
+                                             & (extracted_dynamic_fields['par_num'].isin(par_array))
+                                             & (extracted_dynamic_fields['line_num'].isin(line_array))
+                        # & (extracted_dynamic_fields['word_num'].isin(range(1, 20)))
+                                             ]['conf'].values
+                regex = re.compile("^[5S]K\d+")
+                idxs = [i for i, item in enumerate(search_text) if re.search(regex, item)]
+                if idxs:
+                    conf_ind = idxs[0]
+                    IBAN_seg_len = len(search_text[conf_ind])
+                    if IBAN_seg_len >20:  # cele cislo IBANU je v 1 bunke
+                        conf_index = confidences[conf_ind+1]
+                    else:
+                        #TODO vypocitaj priemer
+                        while IBAN_seg_len<20:
+                            IBAN_seg_len = IBAN_seg_len + len(search_text[conf_ind+1])
+                            conf_ind = conf_ind + 1
+                        from statistics import mean
+                        conf_index = mean(confidences[range(idxs[0] + 1, conf_ind + 3)])
+
                 if len(search_text) > 0:
                     row_text = row_text.join(search_text)
                     break
 
-
-
-    # row_text = extracted_dynamic_fields[extracted_dynamic_fields['block_num'].isin(block_num)]['text'].values
         # clean the row by replacing non values and spaces
     clear_row_text = str(row_text).replace('nan', '')
     clear_row_text = unidecode.unidecode(clear_row_text.upper())
@@ -668,7 +659,7 @@ def try_multiple_regex(row, regexp, group=None, is_number=False):
 # ulozenie extahovanych aj cielovych hodnot do vysledneho suboru kvoli analyze presnosti extrahovania
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
     csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'cena_s_dph_target',
-                   'cena_s_dph_extracted', 'cena_s_dph_conf', 'cena_s_dph_word','iban_target', 'iban_extracted',
+                   'cena_s_dph_extracted', 'cena_s_dph_conf', 'cena_s_dph_word','iban_target', 'iban_extracted', 'iban_conf',
                    'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
@@ -678,6 +669,7 @@ def save_to_csv(filename, extraction_method, target_values, extracted_values, el
          'cena_s_dph_conf': extracted_values.get('cena_s_dph_conf', ' -'),
          'cena_s_dph_word': extracted_values.get('cena_s_dph_word', ' -'),
          'iban_target': target_values.get('iban', ' -'), 'iban_extracted': extracted_values.get('iban', ' -'),
+         'iban_conf': extracted_values.get('iban_conf', ' -'),
          'ecv_target': target_values.get('ecv', ' -'), 'ecv_extracted': extracted_values.get('ecv', ' -'),
          'vin_target': target_values.get('vin', ' -'), 'vin_extracted': extracted_values.get('vin', ' -'),
          }]

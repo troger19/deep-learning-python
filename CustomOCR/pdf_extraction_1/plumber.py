@@ -118,8 +118,8 @@ def extract_values_from_file(full_path):
                 aa.update({hh[1]: hh[2]})
             # print(aa)
         # print(aa)
-        conf = max(aa.keys())
-        cena = aa.get(conf)
+        conf = max([safe_cast(i, int, 0) for i in aa.keys()])
+        cena = aa.get(str(conf))
 
         extracted_values.update({'cena_s_dph': cena})
         extracted_values.update({'cena_s_dph_conf': conf})
@@ -136,7 +136,7 @@ def ocr_extraction(extracted_values, extraction_method,full_path, i, img_pdf):
     print('pouzivam OCR')
     extraction_method = set_extraction_method(extracted_values, extraction_method, 'OCR')
     if img_pdf is None:
-        img_pdf = convert_from_path(full_path)
+        img_pdf = convert_from_path(full_path, dpi=200)
     extracted_values = extract_dynamic_fields(np.array(img_pdf[i]), phrases_to_extract, extracted_values, ico_servisy,
                                               os.path.basename(full_path))
     return extracted_values,extraction_method
