@@ -34,9 +34,12 @@ path = '..\\..\\Datasets\\faktury\\pokus\\'
 # phrases_to_extract = {'suma': 'ÚHRADE', 'iban': 'IBAN'}
 invoices_list = os.listdir(path)
 phrases_to_extract = {'cena_s_dph': 'ÚHRADE UHRADE ÚHRADU KÚHRADE CELKOM SUMA ÚHRADÉ CELKEM', 'iban': 'IBAN','ico': 'ICO IČO','ecv': 'ECV EČV SPZ ŠPZ EVČ EČ'}
+# phrases_to_extract = {'ico': 'ICO IČO'}
 # phrases_to_extract = {'cena_s_dph': 'ÚHRADE UHRADE ÚHRADU KÚHRADE CELKOM SUMA ÚHRADÉ CELKEM'}
 myList = ['ÚHRADE','SUMA','CELKOM','FAKTURA','FAKTÚRA','IBAN']
-target_values = 'validation\\faktury_1000.xlsx'
+# target_values = 'validation\\Faktury-template.xlsx'
+# target_values = 'validation\\faktury_1000.xlsx'
+target_values = 'validation\\faktury_1500.xlsx'
 
 
 def are_all_values_extracted(extracted_values,extraction_method):
