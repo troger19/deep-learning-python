@@ -1,0 +1,38 @@
+{
+  "name": "o2",
+  "keywords": [
+    "O2",
+    "O2 Slovakia, s.r.o.",
+    "Einsteinova 24",
+    "www.o2.sk",
+    "IČO: 35 848 863",
+    "IČ DPH: SK2020216748",
+    "DIČ: 2020216748",
+    "SK1109000000000630964920"
+  ],
+  "ROI": [
+    {
+      "x1": 158,
+      "x2": 336,
+      "y1": 272,
+      "y2": 372,
+      "type": "text",
+      "name": "ico"
+    },
+    {
+      "x1": 1006,
+      "x2": 882,
+      "y1": 1364,
+      "y2": 904,
+      "type": "text",
+      "name": "iban"
+    }
+  ],
+   "phrase": [
+    {
+      "name": "celkova_suma",
+      "text": "Celková suma faktúry",
+      "type": "decimal"
+    }
+  ]
+}

@@ -16,8 +16,10 @@ at the end, click on a high toolbar of the window and press 's'  on the keyboard
 
 import cv2
 import random
+import numpy as np
 path = '..\\Datasets\\faktury\\pdf\\orange'
-path = path + '\\model_image.jpg'
+# path = path + '\\model_image.jpg'
+path = path + '\\120_faktura-1174.pdf'
 # path = '..\\Datasets\\faktury\\compressed_photo\\straight\\orange\\1.jpg'
 scale = 0.5
 circles = []
@@ -43,7 +45,10 @@ def mousePoints(event,x,y,flags,params):
         circles.append([x,y,myColor])
         counter2 += 1
 
-img = cv2.imread(path)
+from pdf2image import convert_from_path
+img_pdf = convert_from_path(path, dpi=200)
+# img = cv2.imread(path)
+img = np.array(img_pdf[0])
 img = cv2.resize(img, (0, 0), None, scale, scale)
 
 while True:

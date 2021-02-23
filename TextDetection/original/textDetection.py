@@ -4,8 +4,8 @@ import pytesseract
 # specify the path to tesseract or install module to Python environemnt
 # pytesseract.pytesseract.tesseract_cmd = 'd:\\Java\\Tesseract\\tesseract.exe'
 
-img = cv2.imread('target.png')
-img_photo = cv2.imread('target.png')
+img = cv2.imread('2021-02-11.jpg')
+img_photo = cv2.imread('2021-02-11.jpg')
 # pytessearct only expects RGB but opencv is in BGR
 img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
 
@@ -15,7 +15,8 @@ print(pytesseract.image_to_string(img,lang='SLK'))
 ### Detecting characters
 ##extract width and height of the image. 3. parmeter = 3 which means color
 hImg,wImg,_ = img_photo.shape
-boxes = pytesseract.image_to_boxes(img_photo, lang='SLK')
+boxes = pytesseract.image_to_boxes(img_photo, lang='SLK',config='--psm 10')
+# boxes = pytesseract.image_to_boxes(img_photo, lang='SLK',config='--oem 2 --psm 10 -c tessedit_char_whitelist=0123456789')
 for b in boxes.splitlines():
     b=b.split(' ')
     print(b)

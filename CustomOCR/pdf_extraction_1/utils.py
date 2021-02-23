@@ -159,7 +159,8 @@ def load_target_values_excel(target_values):
     total_info = {}
     for row in range(2, sheet.max_row + 1):
         filename = sheet['A' + str(row)].value
-        nazov = sheet['B' + str(row)].value
+        template = sheet['B' + str(row)].value
+        # nazov = sheet['B' + str(row)].value
         ico = sheet['C' + str(row)].value
         iban = sheet['D' + str(row)].value
         cislo_fakt = sheet['E' + str(row)].value
@@ -168,9 +169,11 @@ def load_target_values_excel(target_values):
         ecv = sheet['H' + str(row)].value
         cez_bez_dph = sheet['I' + str(row)].value
         cena_s_dph = sheet['J' + str(row)].value
-        mena = sheet['K' + str(row)].value
+        mena = sheet['N' + str(row)].value
         vin = sheet['L' + str(row)].value
-
+        strana_ceny = sheet['K' + str(row)].value
+        klucove_slovo = sheet['M' + str(row)].value
+        poznamka = sheet['P' + str(row)].value
         total_info.setdefault(filename, {'nazov': None,
                                          'ico': '',
                                          'iban': '',
@@ -181,10 +184,14 @@ def load_target_values_excel(target_values):
                                          'cena_s_dph': '',
                                          'mena': '',
                                          'ecv': '',
-                                         'vin': ''
+                                         'vin': '',
+                                         'template': '',
+                                         'strana_ceny': '',
+                                         'klucove_slovo': '',
+                                         'poznamka': ''
                                          })
 
-        total_info[filename]['nazov'] = nazov
+        # total_info[filename]['nazov'] = nazov
         total_info[filename]['ico'] = ico
         total_info[filename]['iban'] = iban
         total_info[filename]['cislo_fakt'] = cislo_fakt
@@ -195,6 +202,10 @@ def load_target_values_excel(target_values):
         total_info[filename]['mena'] = mena
         total_info[filename]['ecv'] = ecv
         total_info[filename]['vin'] = vin
+        total_info[filename]['template'] = template
+        total_info[filename]['strana_ceny'] = strana_ceny
+        total_info[filename]['klucove_slovo'] = klucove_slovo
+        total_info[filename]['poznamka'] = poznamka
 
     return total_info
 
@@ -687,7 +698,7 @@ def try_multiple_regex(row, regexp, group=None, is_number=False):
 def save_to_csv(filename, extraction_method, target_values, extracted_values, elapsed_time):
     csv_columns = ['filename', 'duration', 'method', 'ico_target', 'ico_extracted', 'ico_conf','cena_s_dph_target',
                    'cena_s_dph_extracted', 'cena_s_dph_conf', 'cena_s_dph_word','iban_target', 'iban_extracted', 'iban_conf',
-                   'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted']
+                   'ecv_target', 'ecv_extracted', 'vin_target', 'vin_extracted','template','strana_ceny','klucove_slovo','poznamka']
     dict_data = [
         {'filename': filename, 'duration': elapsed_time, 'method': extraction_method,
          'ico_target': target_values.get('ico', ' -'), 'ico_extracted': extracted_values.get('ico', ' -'),
@@ -700,6 +711,8 @@ def save_to_csv(filename, extraction_method, target_values, extracted_values, el
          'iban_conf': extracted_values.get('iban_conf', ' -'),
          'ecv_target': target_values.get('ecv', ' -'), 'ecv_extracted': extracted_values.get('ecv', ' -'),
          'vin_target': target_values.get('vin', ' -'), 'vin_extracted': extracted_values.get('vin', ' -'),
+         'template': target_values.get('template', ' -'), 'strana_ceny': target_values.get('strana_ceny', ' -'),
+         'klucove_slovo': target_values.get('klucove_slovo', ' -'), 'poznamka': target_values.get('poznamka', ' -'),
          }]
     csv_file = "data.csv"
     try:
